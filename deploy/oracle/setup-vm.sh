@@ -82,7 +82,7 @@ mkdir -p /etc/iptables
 iptables-save > /etc/iptables/rules.v4
 echo "    IMPORTANT: also open TCP $HTTP_PORT in the OCI VCN security list (console)."
 
-echo "==> Building and starting AmberClaw (first build downloads ~220 MB of models)"
+echo "==> Building and starting AmberClaw (first build downloads ~550 MB of Whisper models)"
 cd "$REPO_DIR"
 docker compose -f deploy/oracle/docker-compose.yml up -d --build
 
