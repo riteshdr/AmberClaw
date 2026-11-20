@@ -29,13 +29,17 @@ def whisper(name):
         return _models[name]
 
 
-def transcribe(model_name, samples, language=None, offset=0.0):
+def transcribe(model_name, samples, language=None, offset=0.0, initial_prompt=None):
     """[{s, e, w}] word timings (seconds + offset) and the detected language."""
     np.seterr(all="ignore")
-    segments, info = whisper(model_name).transcribe(
-        samples, language=language, word_timestamps=True, vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 400},
-        beam_size=1 if model_name == "tiny" else 4, condition_on_previous_text=False)
+    kwargs = dict(language=language, word_timestamps=True, vad_filter=True,
+                  vad_parameters={"min_silence_duration_ms": 400},
+                  beam_size=1 if model_name == "tiny" else 4,
+                  condition_on_previous_text=False)
+    if initial_prompt:
+        # nudges Whisper towards Roman Hinglish instead of Devanagari / mangled English
+        kwargs["initial_prompt"] = initial_prompt
+    segments, info = whisper(model_name).transcribe(samples, **kwargs)
     words = []
     for seg in segments:
         for w in seg.words or []:

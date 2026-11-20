@@ -3,6 +3,16 @@
 Words are shown a few at a time; the word being spoken is coloured and slightly larger.
 A phrase stays on screen through short breaths so captions never flicker."""
 
+import re
+
+try:
+    from indic_transliteration import sanscript
+    from indic_transliteration.sanscript import transliterate as _transliterate
+except ImportError:  # optional dependency: untransliterated text is still readable
+    _transliterate = None
+
+DEVANAGARI = re.compile(r"[\u0900-\u097F]")
+
 STYLE = """[Script Info]
 ScriptType: v4.00+
 PlayResX: {w}
@@ -39,6 +49,31 @@ def _clean(word):
     return word.replace("{", "").replace("}", "").replace("\\", "").strip()
 
 
+def _roman_hinglish(text):
+    """Turn ITRANS output into the casual Roman Hinglish seen on Indian Shorts."""
+    text = (text.replace("RRi", "ri").replace("RRI", "ri")
+                .replace("LLi", "li").replace("LLI", "li"))
+    text = text.replace("AI", "ai").replace("AU", "au").replace("Au", "au")
+    text = text.replace("A", "a").replace("I", "i").replace("U", "u")
+    text = text.replace("M", "n").replace("~", "n").replace(".", "n")
+    text = text.replace("Sh", "sh").replace("SH", "sh")
+    text = re.sub(r"[TDNLS]", lambda m: m.group(0).lower(), text)
+    # Whisper/ITRS often keeps a final schwa ("kara"); Hinglish drops it ("kar").
+    text = " ".join(w[:-1] if len(w) > 3 and re.search(r"[^aeiouya]a$", w) else w
+                    for w in text.split())
+    return text
+
+
+def romanize(text):
+    """Devanagari -> readable Roman letters. Leaves already-Latin text untouched."""
+    if not text or not DEVANAGARI.search(text) or _transliterate is None:
+        return text
+    try:
+        return _roman_hinglish(_transliterate(text, sanscript.DEVANAGARI, sanscript.ITRANS))
+    except Exception:  # noqa: BLE001 - never let a subtitle break a render
+        return text
+
+
 def phrases(words, size):
     out, cur = [], []
     for i, w in enumerate(words):
@@ -60,6 +95,9 @@ def write(words, length, path, cfg):
     rows = [STYLE.format(w=cfg["width"], h=cfg["height"], font=cfg["cap_font"],
                          size=cfg["cap_size"], fill=fill, outline=cfg["cap_outline"])]
     words = [w for w in words if w["e"] > 0 and w["s"] < length and _clean(w["w"])]
+    if cfg.get("romanize_captions"):
+        words = [dict(w, w=romanize(w["w"])) for w in words]
+        words = [w for w in words if _clean(w["w"])]
     groups = phrases(words, cfg["cap_words"])
     for gi, group in enumerate(groups):
         texts = [_clean(w["w"]) for w in group]

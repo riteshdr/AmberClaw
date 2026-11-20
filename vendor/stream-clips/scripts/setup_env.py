@@ -22,7 +22,8 @@ MODELS = ENV_DIR / "models"
 DATA = Path(os.environ.get("STREAMCLIPS_HOME", Path.home() / "StreamClips"))
 HERE = Path(__file__).resolve().parent
 
-PACKAGES = ["faster-whisper", "opencv-python-headless", "pillow", "numpy", "yt-dlp[default]"]
+PACKAGES = ["faster-whisper", "opencv-python-headless", "pillow", "numpy", "yt-dlp[default]",
+            "indic-transliteration"]
 FACE_MODEL_URL = ("https://github.com/opencv/opencv_zoo/raw/main/models/"
                   "face_detection_yunet/face_detection_yunet_2023mar.onnx")
 
@@ -110,16 +111,16 @@ def install_packages():
 
 
 def download_models():
-    print("Downloading Whisper speech models (tiny + base, ~220 MB, first time only)...")
+    print("Downloading Whisper speech models (tiny + small, ~550 MB, first time only)...")
     code = (
         "import sys\n"
         "from faster_whisper import WhisperModel\n"
-        "for n in ('tiny', 'base'):\n"
+        "for n in ('tiny', 'small'):\n"
         "    WhisperModel(n, device='cpu', compute_type='int8', download_root=sys.argv[1])\n"
     )
     (MODELS / "whisper").mkdir(parents=True, exist_ok=True)
     subprocess.run([str(VENV_PY), "-c", code, str(MODELS / "whisper")], check=True)
-    good("Whisper models (tiny = scanning the stream, base = captions)")
+    good("Whisper models (tiny = scanning the stream, small = accurate Hinglish captions)")
     face = MODELS / "face_yunet.onnx"
     if not face.exists() or face.stat().st_size < 10000:
         try:

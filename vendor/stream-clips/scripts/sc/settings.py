@@ -10,8 +10,13 @@ DEFAULTS = {
 
     # listening
     "scan_model": "tiny",            # Whisper model for the whole stream (fast)
-    "caption_model": "base",         # Whisper model for each clip's captions (accurate)
-    "language": None,                # None = detect once per stream, or e.g. "en", "hi", "es"
+    "caption_model": "small",        # Whisper model for each clip's captions (accurate Hinglish)
+    "language": None,                # None = detect per block. Set "hi" for Devanagari captions.
+    "caption_language": "en",        # Roman Hinglish captions; "hi" = Devanagari, "" = follow `language`
+    "caption_prompt": ("Hinglish (Hindi written in Roman letters) gaming stream: bhai, "
+                       "kya kar rahe ho, yaar, chill kar, mil gaya, samajh nahi aa raha, "
+                       "chalo, dekh lo, waah, awesome."),
+    "romanize_captions": True,       # transliterate Devanagari that Whisper still emits
     "block_minutes": 10,             # audio is processed and cached in blocks of this size
     "volume_jump_db": 7.0,           # this much louder than the surrounding minutes = a spike
     "chat_jump": 3.0,                # chat this many times its usual speed = a spike
@@ -52,10 +57,10 @@ DEFAULTS = {
     "cap_upper": True,
     "cap_y": 0.70,                   # vertical position of the caption line (0 top, 1 bottom)
 
-    # output
-    "video_height": 1080,
-    "crf": 21,
-    "x264_preset": "fast",
+    # output (canvas stays 1080x1920; fetch the sharpest source available and downscale)
+    "video_height": 2160,            # source cap: use up to 4K so the 1080p vertical output is crisp
+    "crf": 18,                       # visually lossless-ish; lower = better quality
+    "x264_preset": "medium",         # slower encode, noticeably better detail than "fast"
     "loudness": -14,                 # LUFS; None to leave the audio as it is
     "audio_kbps": 192,
 }

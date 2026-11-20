@@ -18,7 +18,7 @@ Clips are saved in `~/StreamClips/<date>/<topic>/<creator>__<title>/` (Windows: 
 
 ## 0. First time on a computer
 
-1. Run `streamclips setup` and wait for **READY**. It checks for ffmpeg, a JavaScript runtime (deno or node; YouTube downloads need one) and disk space. It then builds a private Python environment in `~/.streamclips`, installs Whisper, OpenCV, Pillow and yt-dlp, and downloads two Whisper models (~220 MB) and a face model (0.2 MB).
+1. Run `streamclips setup` and wait for **READY**. It checks for ffmpeg, a JavaScript runtime (deno or node; YouTube downloads need one) and disk space. It then builds a private Python environment in `~/.streamclips`, installs Whisper, OpenCV, Pillow, yt-dlp and indic-transliteration, and downloads two Whisper models (~550 MB: `tiny` + `small`) and a face model (0.2 MB).
 2. If something is MISSING, install it the official way, then open a new terminal and run setup again. Ask the user before anything that needs an admin password.
    - macOS: `brew install ffmpeg deno`
    - Windows: `winget install Gyan.FFmpeg` and `winget install DenoLand.Deno`
@@ -35,7 +35,7 @@ Clips are saved in `~/StreamClips/<date>/<topic>/<creator>__<title>/` (Windows: 
 4. **Make each clip.**
    - Only that clip's video is downloaded (up to 1080p).
    - It's synced to the stream audio by matching the sound.
-   - Captions are re-transcribed with Whisper `base` and shown word by word.
+   - Captions are re-transcribed with Whisper `small` (Roman Hinglish by default) and shown word by word.
    - The frame becomes 9:16, with the look chosen automatically:
      - **stack**: facecam on top, gameplay below (a small face in a corner)
      - **crop**: follows the face (podcast, just chatting, IRL)
@@ -111,8 +111,9 @@ Re-running the same command resumes. Finished steps are cached in `~/StreamClips
 **Language.** By default, the language is detected separately for each 10-minute block and
 each clip, so streamers who switch languages are handled.
 
-- **Hinglish** (Hindi mixed with English): add `--language en`. Captions then come out in Roman letters, the way Indian Shorts are usually captioned. Pure Hindi in Devanagari: `--language hi`.
-- **Garbled transcript:** if the transcript in a prompt file looks garbled, the scan model is too small for that language. Set `"scan_model": "base"` in settings.json. It's about 2× slower but much more accurate for non-English speech.
+- **Hinglish** (Hindi mixed with English): captions default to Roman script via `caption_language: "en"`, a Hinglish Whisper prompt and a Devanagari→Roman fallback. This is independent of `--language`, which controls the whole-stream scan — a Hindi stream scanned with `--language hi` still gets Roman captions. For Devanagari captions set `"caption_language": "hi"` in settings.json; set it to `""` to follow the detected language.
+- **Garbled transcript:** if the transcript in a prompt file looks garbled, the scan model is too small for that language. Set `"scan_model": "base"` in settings.json. It's about 2× slower but much more accurate for non-English speech. Caption accuracy is already improved by the default `"caption_model": "small"`.
+- **Quality:** output is always 1080x1920. `"video_height": 2160` fetches up to a 4K source before downscaling, and `crf: 18` / `x264_preset: "medium"` keep the encode crisp. Lower `video_height` to 1080 or use `x264_preset: "fast"` if your CPU is too slow.
 
 ## 4. Finding streams
 

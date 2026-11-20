@@ -32,7 +32,7 @@ sudo bash /opt/amberclaw/deploy/oracle/setup-vm.sh
 
 The script installs Docker, creates `/var/lib/amberclaw` (persistent data), prompts for a free
 `GROQ_API_KEY` (open-weight GPT-OSS), generates a strong Basic-auth password, opens port 10000
-in the host firewalls, builds the image (downloads ~220 MB of Whisper models) and starts the app.
+in the host firewalls, builds the image (downloads ~550 MB of Whisper models: `tiny` + `small`) and starts the app.
 
 Open `http://<public-ip>:10000` and log in with the printed credentials.
 
@@ -48,6 +48,12 @@ Everything is in `/opt/amberclaw/.env` (`chmod 600`):
 | `AMBERCLAW_BASIC_AUTH` | `user:pass,user2:pass2`. Keep this set — the UI is public. |
 | `AMBERCLAW_DATA_DIR` / `STREAMCLIPS_HOME` | Must stay `/data` and `/data/StreamClips` (mounted to `/var/lib/amberclaw`). |
 | `AUTO_UPLOAD` | Leave `false` until upload credentials are mounted. |
+
+Captions default to Roman Hinglish (Whisper `small` + Hinglish prompt + Devanagari→Roman fallback)
+and output is 1080x1920 at up to 60 fps, encoded at `crf 18` / `medium` from up to a 4K source.
+No extra config is needed. To regenerate clips with new settings, re-run the same job; if the old
+captions are cached, delete `STREAMCLIPS_HOME/.cache/<stream>/clips/*.ass` first (and set
+`AUTO_UPLOAD=false` while testing to avoid duplicates).
 
 ### Enabling YouTube uploads
 The OAuth files are gitignored, so copy them to the VM and uncomment the two mounts in

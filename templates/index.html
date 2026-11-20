@@ -103,7 +103,7 @@
           </div>
 
           <label>Language code (optional)</label>
-          <input type="text" name="language" placeholder="e.g. en, hi, es (leave blank to detect)" />
+          <input type="text" name="language" placeholder="en = Roman Hinglish (default), hi = Devanagari, blank = auto" />
 
           <label class="check"><input type="checkbox" name="find" checked /> Find streams by topic when no URLs are provided</label>
           <label class="check"><input type="checkbox" name="auto_upload" {% if defaults.auto_upload %}checked{% endif %} /> Auto-upload generated clips to YouTube after this job (requires configured OAuth/token)</label>

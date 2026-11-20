@@ -88,6 +88,12 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 - Generated clips, `clips.json`, `POSTING.md`, and check images are written under `STREAMCLIPS_HOME` (default: `<AMBERCLAW_DATA_DIR>/StreamClips/<date>/<topic>/...`).
 - Review clips before posting/uploading. Uploads can be triggered per-result from the job page, or auto-uploaded when `AUTO_UPLOAD=true` / checkbox enabled (and YouTube auth is configured).
 
+### Captions and video quality
+
+Captions use Whisper `small` with a Hinglish prompt and a Devanagari→Roman fallback, so Hindi/Hinglish streams get natural Roman captions (e.g. `bhai dekh lo`) instead of garbled text. This is independent of the UI language field (which controls the whole-stream scan), so entering `hi` for a Hindi stream no longer forces Devanagari captions. For Devanagari captions, set `"caption_language": "hi"` in `STREAMCLIPS_HOME/settings.json` (all settings are listed in `vendor/stream-clips/scripts/sc/settings.py`).
+
+Output is always **1080x1920 at up to 60 fps**. The source is downloaded at up to 4K (`video_height: 2160`) and downscaled with Lanczos, then encoded with `crf: 18` / `x264_preset: "medium"`. On a slower CPU, set `x264_preset: "fast"` or `video_height: 1080` in settings.json — the canvas stays 1080p either way.
+
 ## YouTube upload & credit
 
 - The uploader builds a title/description from `clips.json` metadata and includes source creator/title/URL plus the generated caption/hashtags using `YOUTUBE_DESCRIPTION_TEMPLATE`.
