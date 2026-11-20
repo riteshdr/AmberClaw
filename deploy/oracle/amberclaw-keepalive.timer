@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AmberClaw keepalive hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=amberclaw-keepalive.service
+
+[Install]
+WantedBy=timers.target

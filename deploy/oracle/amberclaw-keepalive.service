@@ -1,0 +1,9 @@
+[Unit]
+Description=AmberClaw keepalive (avoid OCI Always Free idle reclamation)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/bin/amberclaw-keepalive
+Nice=10

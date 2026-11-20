@@ -1,0 +1,51 @@
+services:
+  amberclaw:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: amberclaw:local
+    container_name: amberclaw
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      PORT: "10000"
+      AMBERCLAW_DATA_DIR: /data
+      STREAMCLIPS_HOME: /data/StreamClips
+    ports:
+      - "10000:10000"
+    volumes:
+      # Jobs, clips and caches survive restarts/redeploy here.
+      - /var/lib/amberclaw:/data
+      # Optional YouTube upload credentials. Copy the files to the repo root first,
+      # then uncomment these two lines and `docker compose ... up -d`.
+      # - ../../client_secrets.json:/app/client_secrets.json:ro
+      # - ../../token.json:/app/token.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:10000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # Optional HTTPS. Run with: docker compose -f deploy/oracle/docker-compose.yml --profile tls up -d
+  # Requires DOMAIN=your.domain in the root .env, DNS pointing at the VM, and ports 80/443 open.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - amberclaw
+
+volumes:
+  caddy_data:
+  caddy_config:

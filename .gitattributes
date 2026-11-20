@@ -1,0 +1,7 @@
+# Keep LF endings in the repo so Linux shells/scripts work after cloning.
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Caddyfile text eol=lf

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: amberclaw
+    runtime: docker
+    plan: standard
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: AMBERCLAW_DATA_DIR
+        value: /data
+      - key: STREAMCLIPS_HOME
+        value: /data/StreamClips
+      - key: STREAMCLIPS_BRAIN
+        value: openai
+      - key: AUTO_UPLOAD
+        value: "false"
+      - key: YOUTUBE_PRIVACY
+        value: private
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: AMBERCLAW_BASIC_AUTH
+        sync: false
+    disk:
+      name: amberclaw-data
+      mountPath: /data
+      sizeGB: 20

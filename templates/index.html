@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AmberClaw</title>
+  <style>
+    :root { --bg:#0b0d10; --panel:#151922; --text:#e8edf2; --muted:#98a2b3; --accent:#ffbf3c; --line:#273043; --ok:#2ecc71; --bad:#ff6b6b; --warn:#f2c94c; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, Arial, sans-serif; background:linear-gradient(180deg,#0b0d10,#10141b); color:var(--text); }
+    .wrap { max-width: 1150px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 4px; font-size: 28px; } .sub { color:var(--muted); margin-bottom: 20px; }
+    .grid { display:grid; grid-template-columns: 1.05fr 1fr; gap: 16px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; }
+    label { display:block; font-size: 13px; color:var(--muted); margin: 10px 0 4px; }
+    input[type=text], input[type=number], select, textarea { width:100%; box-sizing:border-box; background:#0f131a; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+    textarea { min-height: 70px; resize: vertical; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .btn { margin-top:14px; background:var(--accent); color:#1a1406; border:none; padding:11px 14px; border-radius:10px; font-weight:700; cursor:pointer; width:100%; }
+    .btn:hover { filter:brightness(1.05); }
+    .check { display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--muted); font-size:14px; }
+    table { width:100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding:9px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+    a { color:#ffd37a; text-decoration:none; } a:hover { text-decoration:underline; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap; }
+    .s-queued { background:#2b3445; color:#cbd5e1; } .s-running { background:#2a3a5f; color:#93c5fd; }
+    .s-succeeded { background:#1f3d2b; color:#86efac; } .s-failed { background:#4a2323; color:#fca5a5; }
+    .s-needs_attention { background:#4a3a1f; color:#fde68a; }
+    .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; background:#64748b; }
+    .dot.run { background:#60a5fa; box-shadow:0 0 0 0 rgba(96,165,250,.7); animation:pulse 1.4s infinite; }
+    .dot.queue { background:#94a3b8; }
+    .dot.ok { background:#4ade80; } .dot.bad { background:#f87171; } .dot.warn { background:#fbbf24; }
+    @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(96,165,250,.6)} 70%{box-shadow:0 0 0 7px rgba(96,165,250,0)} 100%{box-shadow:0 0 0 0 rgba(96,165,250,0)} }
+    .stale { color:#fbbf24; font-size:11px; font-weight:600; }
+    .small { color:var(--muted); font-size:11px; line-height:1.3; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; }
+    @media (max-width: 980px){ .grid{ grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>AmberClaw</h1>
+    <div class="sub">Daily clip generation with <code>stream-clips</code> + optional YouTube upload. Give a topic or URLs, run, and track jobs below.</div>
+
+    <div class="grid">
+      <div class="card">
+        <h3 style="margin-top:0">New job</h3>
+        <form method="post" action="/jobs">
+          <label>Daily prompt / topic</label>
+          <input type="text" name="prompt" placeholder='e.g. "Valorant clutch moments" or "GTA 6 funny fails"' />
+          <div class="hint">Used as topic and focus by default. You can override with the fields below.</div>
+
+          <div class="row">
+            <div>
+              <label>Topic (override)</label>
+              <input type="text" name="topic" placeholder="e.g. Valorant" />
+            </div>
+            <div>
+              <label>Focus (override)</label>
+              <input type="text" name="focus" placeholder="e.g. clutch 1v5s and rage moments" />
+            </div>
+          </div>
+
+          <label>Stream/VOD URLs (optional, space or comma separated)</label>
+          <textarea name="urls" placeholder="https://www.youtube.com/watch?v=...&#10;https://www.twitch.tv/videos/..."></textarea>
+
+          <div class="row">
+            <div>
+              <label>Clips per stream</label>
+              <input type="number" name="clips" value="3" min="1" max="10" />
+            </div>
+            <div>
+              <label>Streams to find (when using topic search)</label>
+              <input type="number" name="count" value="5" min="1" max="20" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Search window</label>
+              <select name="when">
+                <option value="hour">hour</option>
+                <option value="today" selected>today</option>
+                <option value="week">week</option>
+                <option value="month">month</option>
+              </select>
+            </div>
+            <div>
+              <label>Brain / picker</label>
+              <select name="brain">
+                <option value="openai" {% if defaults.brain == 'openai' %}selected{% endif %}>openai (API key)</option>
+                <option value="auto" {% if defaults.brain == 'auto' %}selected{% endif %}>auto (local CLIs)</option>
+                <option value="claude">claude</option>
+                <option value="codex">codex</option>
+                <option value="gemini">gemini</option>
+                <option value="opencode">opencode</option>
+                <option value="agent">agent (manual)</option>
+              </select>
+            </div>
+          </div>
+
+          <label>Language code (optional)</label>
+          <input type="text" name="language" placeholder="e.g. en, hi, es (leave blank to detect)" />
+
+          <label class="check"><input type="checkbox" name="find" checked /> Find streams by topic when no URLs are provided</label>
+          <label class="check"><input type="checkbox" name="auto_upload" {% if defaults.auto_upload %}checked{% endif %} /> Auto-upload generated clips to YouTube after this job (requires configured OAuth/token)</label>
+
+          <button class="btn" type="submit">Run AmberClaw job</button>
+        </form>
+        <div class="hint" style="margin-top:10px">Tip: for unattended/server runs use <b>brain=openai</b> with <code>OPENAI_API_KEY</code>. <code>brain=agent</code> needs manual answers and will pause. If a job shows <b>stale/no heartbeat</b>, the worker likely stopped/restarted.</div>
+      </div>
+
+      <div class="card">
+        <div class="topbar">
+          <h3 style="margin:0">Recent jobs</h3>
+          <div class="small" id="live-note">Live status • auto-refresh</div>
+        </div>
+        {% if not jobs %}
+          <div class="hint" id="empty">No jobs yet.</div>
+        {% endif %}
+        <table>
+          <thead><tr><th>Job</th><th>Status</th><th>Prompt/Topic</th><th>Activity</th></tr></thead>
+          <tbody id="jobs-body">
+          {% for j in jobs %}
+            <tr>
+              <td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td>
+              <td><span class="pill s-{{ j.status }}">{{ j.status }}</span></td>
+              <td>{{ (j.payload.topic or j.payload.prompt or '-')[:50] }}</td>
+              <td class="small">{{ j.updated_at }}<br><span class="mono">{{ ((j.log or [''])[-1])[:80] }}</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function ago(iso){
+      if(!iso) return '';
+      const t = new Date(iso.replace(' ', 'T').replace(/Z?$/, 'Z')).getTime();
+      if(isNaN(t)) return iso;
+      const s = Math.max(0, Math.floor((Date.now()-t)/1000));
+      if(s < 60) return s + 's ago';
+      if(s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's ago';
+      return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm ago';
+    }
+    function isStale(j){
+      if(!['running','queued'].includes(j.status) || !j.updated_at) return false;
+      const t = new Date(j.updated_at.replace(' ', 'T').replace(/Z?$/, 'Z')).getTime();
+      if(isNaN(t)) return false;
+      return (Date.now()-t) > 180000; // 3 min without heartbeat/log update
+    }
+    function dotClass(j){
+      if(isStale(j)) return 'warn';
+      if(j.status==='running') return 'run';
+      if(j.status==='queued') return 'queue';
+      if(j.status==='succeeded') return 'ok';
+      if(j.status==='failed') return 'bad';
+      return 'warn';
+    }
+    function render(jobs){
+      const body = document.getElementById('jobs-body');
+      if(!body) return;
+      if(!jobs.length){ body.innerHTML = '<tr><td colspan="4" class="small">No jobs yet.</td></tr>'; return; }
+      body.innerHTML = jobs.map(j => {
+        const stale = isStale(j);
+        const last = (j.last_log || '').slice(0, 90);
+        const topic = (j.topic || '-').slice(0, 50);
+        const act = `${esc(j.updated_at||'')}<br><span class="small">(${ago(j.updated_at)})</span>${stale ? '<br><span class="stale">⚠ stale / no heartbeat</span>' : ''}${last ? `<br><span class="mono small">${esc(last)}</span>` : ''}`;
+        return `<tr>
+          <td><a href="/jobs/${esc(j.id)}">${esc(j.id)}</a></td>
+          <td><span class="dot ${dotClass(j)}"></span><span class="pill s-${esc(j.status)}">${esc(j.status)}</span></td>
+          <td>${esc(topic)}</td>
+          <td class="small">${act}</td>
+        </tr>`;
+      }).join('');
+    }
+    async function refresh(){
+      try{
+        const r = await fetch('/api/jobs', {cache:'no-store'});
+        if(!r.ok) return;
+        const data = await r.json();
+        render(data.jobs || []);
+      }catch(e){}
+    }
+    refresh();
+    setInterval(refresh, 4000);
+  </script>
+</body>
+</html>
