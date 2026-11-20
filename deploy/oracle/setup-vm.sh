@@ -54,11 +54,12 @@ path.write_text("\n".join(out) + "\n", encoding="utf-8")
 PY
 }
 
-key_value="$(grep -E '^OPENAI_API_KEY=' "$ENV_FILE" | cut -d= -f2- || true)"
+key_value="$(grep -E '^GROQ_API_KEY=' "$ENV_FILE" | cut -d= -f2- || true)"
 if [ -z "${key_value:-}" ] || [ "$key_value" = "replace-me" ]; then
-  read -rsp "OpenAI API key (needed for headless clipping): " typed_key
+  echo "Free Groq API key (for open-weight GPT-OSS): get one at https://console.groq.com/keys"
+  read -rsp "Groq API key (needed for headless clipping): " typed_key
   echo
-  set_env OPENAI_API_KEY "$typed_key"
+  set_env GROQ_API_KEY "$typed_key"
 fi
 
 if grep -q 'replace-with-a-strong-password' "$ENV_FILE"; then

@@ -6,6 +6,8 @@ user is already signed in to, so it runs on their own subscription (no API keys)
   gemini    Gemini CLI        gemini -p "..."                 (prompt on stdin)
   opencode  OpenCode          opencode run "read <file> ..."  (prompt in a file)
   openai    OpenAI-compatible API (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL)
+  groq      Groq OpenAI-compatible API with free open-weight GPT-OSS models
+            (GROQ_API_KEY/GROQ_BASE_URL/GROQ_MODEL)
   agent     no CLI call: prompts are written to files and the agent running this
             skill answers them itself, then runs the same command again.
 """
@@ -51,8 +53,9 @@ def choose(wanted="auto"):
     if wanted and wanted != "auto":
         if wanted == "agent":
             return wanted
-        if wanted == "openai":
-            if os.environ.get("OPENAI_API_KEY"):
+        if wanted in ("openai", "groq"):
+            key = "GROQ_API_KEY" if wanted == "groq" else "OPENAI_API_KEY"
+            if os.environ.get(key):
                 return wanted
             # no key: fall back to any available CLI brain, else agent
             for name, hints in HOST_HINTS.items():
@@ -72,6 +75,8 @@ def choose(wanted="auto"):
     for name in ORDER:
         if shutil.which(name):
             return name
+    if os.environ.get("GROQ_API_KEY"):
+        return "groq"
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
     return "agent"
@@ -107,12 +112,12 @@ def _call(cmd, stdin_text=None, cwd=None):
     return proc.stdout
 
 
-def _ask_openai(prompt, model=None):
-    key = os.environ.get("OPENAI_API_KEY")
+def _ask_api(brain, key_name, base_name, default_base, model_name, default_model, prompt, model=None):
+    key = os.environ.get(key_name)
     if not key:
-        raise Problem("--brain openai requires OPENAI_API_KEY to be set.")
-    base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    model = model or os.environ.get("OPENAI_MODEL") or "gpt-4o-mini"
+        raise Problem(f"--brain {brain} requires {key_name} to be set.")
+    base = os.environ.get(base_name, default_base).rstrip("/")
+    model = model or os.environ.get(model_name) or default_model
     payload = {
         "model": model,
         "messages": [
@@ -131,13 +136,23 @@ def _ask_openai(prompt, model=None):
             body = json.loads(resp.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:400]
-        raise Problem(f"openai API failed ({exc.code}): {detail}") from exc
+        raise Problem(f"{brain} API failed ({exc.code}): {detail}") from exc
     except Exception as exc:  # noqa: BLE001
-        raise Problem(f"openai API request failed: {exc}") from exc
+        raise Problem(f"{brain} API request failed: {exc}") from exc
     try:
         return body["choices"][0]["message"]["content"] or ""
     except Exception as exc:  # noqa: BLE001
-        raise Problem(f"openai API returned an unexpected response: {str(body)[:300]}") from exc
+        raise Problem(f"{brain} API returned an unexpected response: {str(body)[:300]}") from exc
+
+
+def _ask_openai(prompt, model=None):
+    return _ask_api("openai", "OPENAI_API_KEY", "OPENAI_BASE_URL", "https://api.openai.com/v1",
+                    "OPENAI_MODEL", "gpt-4o-mini", prompt, model)
+
+
+def _ask_groq(prompt, model=None):
+    return _ask_api("groq", "GROQ_API_KEY", "GROQ_BASE_URL", "https://api.groq.com/openai/v1",
+                    "GROQ_MODEL", "openai/gpt-oss-20b", prompt, model)
 
 
 def ask(brain, prompt, model=None, scratch: Path = None):
@@ -169,4 +184,6 @@ def ask(brain, prompt, model=None, scratch: Path = None):
             task.unlink(missing_ok=True)
     if brain == "openai":
         return _ask_openai(prompt, model)
+    if brain == "groq":
+        return _ask_groq(prompt, model)
     raise Problem(f"unknown brain '{brain}'")

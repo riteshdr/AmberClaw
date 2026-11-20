@@ -90,7 +90,8 @@
             <div>
               <label>Brain / picker</label>
               <select name="brain">
-                <option value="openai" {% if defaults.brain == 'openai' %}selected{% endif %}>openai (API key)</option>
+                <option value="groq" {% if defaults.brain == 'groq' %}selected{% endif %}>groq (free open-weight, recommended)</option>
+                <option value="openai" {% if defaults.brain == 'openai' %}selected{% endif %}>openai (paid API key)</option>
                 <option value="auto" {% if defaults.brain == 'auto' %}selected{% endif %}>auto (local CLIs)</option>
                 <option value="claude">claude</option>
                 <option value="codex">codex</option>
@@ -109,7 +110,7 @@
 
           <button class="btn" type="submit">Run AmberClaw job</button>
         </form>
-        <div class="hint" style="margin-top:10px">Tip: for unattended/server runs use <b>brain=openai</b> with <code>OPENAI_API_KEY</code>. <code>brain=agent</code> needs manual answers and will pause. If a job shows <b>stale/no heartbeat</b>, the worker likely stopped/restarted.</div>
+        <div class="hint" style="margin-top:10px">Tip: for unattended/server runs the default <b>brain=groq</b> uses free open-weight GPT-OSS models with a free <code>GROQ_API_KEY</code> (https://console.groq.com/keys). <code>brain=agent</code> needs manual answers and will pause. If a job shows <b>stale/no heartbeat</b>, the worker likely stopped/restarted.</div>
       </div>
 
       <div class="card">

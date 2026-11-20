@@ -74,7 +74,7 @@ def build_command(payload: dict):
     if _bool(payload.get("fast")):
         cmd.append("--fast")
 
-    brain = (payload.get("brain") or os.environ.get("STREAMCLIPS_BRAIN") or "openai").strip()
+    brain = (payload.get("brain") or os.environ.get("STREAMCLIPS_BRAIN") or "groq").strip()
     cmd += ["--brain", brain]
     model = (payload.get("model") or os.environ.get("STREAMCLIPS_MODEL") or "").strip()
     if model:
@@ -87,17 +87,18 @@ def build_command(payload: dict):
 
 
 def env_with_brain(env, brain, payload):
-    if brain == "openai":
+    if brain in ("openai", "groq"):
+        prefix = "GROQ" if brain == "groq" else "OPENAI"
         # allow per-job override, else fall back to env/.env already loaded
-        key = payload.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
+        key = payload.get(f"{brain}_api_key") or os.environ.get(f"{prefix}_API_KEY")
         if key:
-            env["OPENAI_API_KEY"] = str(key)
-        base = payload.get("openai_base_url") or os.environ.get("OPENAI_BASE_URL")
+            env[f"{prefix}_API_KEY"] = str(key)
+        base = payload.get(f"{brain}_base_url") or os.environ.get(f"{prefix}_BASE_URL")
         if base:
-            env["OPENAI_BASE_URL"] = str(base)
-        omodel = payload.get("openai_model") or os.environ.get("OPENAI_MODEL")
-        if omodel:
-            env["OPENAI_MODEL"] = str(omodel)
+            env[f"{prefix}_BASE_URL"] = str(base)
+        model = payload.get(f"{brain}_model") or os.environ.get(f"{prefix}_MODEL")
+        if model:
+            env[f"{prefix}_MODEL"] = str(model)
     return env
 
 
@@ -174,7 +175,7 @@ def run_job(store: JobStore, job_id: str):
         # agent mode waiting for answers
         result["needs"] = "agent_answers"
         store.update(job_id, status="needs_attention", result=result,
-                     error="stream-clips is waiting for agent answers (brain=agent). Use brain=openai or a configured CLI brain for automated runs.")
+                     error="stream-clips is waiting for agent answers (brain=agent). Use brain=groq or a configured CLI brain for automated runs.")
         return
     if code != 0 and not has_clips:
         store.update(job_id, status="failed", result=result,

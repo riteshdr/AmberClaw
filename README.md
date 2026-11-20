@@ -10,13 +10,13 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 - Runs `stream-clips` in the background as a job and shows live logs/status.
 - Collects generated outputs (`clips.json`, `POSTING.md`, `.mp4` clips) from the stream-clips output folder.
 - **YouTube upload** (manual per job or auto-upload): uploads generated clips with title/description/tags that include credit to the original creator and source URL.
-- Vendored `stream-clips` includes an added `--brain openai` picker backend (OpenAI-compatible Chat Completions API) so jobs can run headlessly on a server without local agent CLIs.
+- Vendored `stream-clips` includes added `--brain groq` (free open-weight GPT-OSS) and `--brain openai` picker backends (OpenAI-compatible Chat Completions API) so jobs can run headlessly on a server without local agent CLIs.
 
 ## Repository layout
 
 - `app.py` - FastAPI web UI and job API
 - `amberclaw/` - job runner, store, YouTube uploader
-- `vendor/stream-clips/` - vendored stream-clips skill/scripts (with `openai` brain support added)
+- `vendor/stream-clips/` - vendored stream-clips skill/scripts (with `groq`/`openai` brain support added)
 - `templates/` - UI templates
 - `scripts/youtube_auth.py` - helper to generate YouTube OAuth token
 - `data/` - runtime data/jobs and (by default) `StreamClips` outputs (`AMBERCLAW_DATA_DIR`)
@@ -33,7 +33,8 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 - Disk space and CPU/RAM for downloads + Whisper transcription + rendering (a few GB recommended; long streams take time)
 
 **For moment picking on a server (headless):**
-- `OPENAI_API_KEY` (and optional `OPENAI_BASE_URL`, `OPENAI_MODEL`) when using `STREAMCLIPS_BRAIN=openai` (default). Any OpenAI-compatible chat API can work if it follows the Chat Completions format.
+- A free `GROQ_API_KEY` (https://console.groq.com/keys) is the default. Groq serves open-weight GPT-OSS models (`openai/gpt-oss-20b` by default) through an OpenAI-compatible API, with a free tier that is fast enough for clip picking. Override with `GROQ_MODEL` if needed.
+- Optional paid fallback: `OPENAI_API_KEY` (and `OPENAI_BASE_URL`, `OPENAI_MODEL`) with `STREAMCLIPS_BRAIN=openai`. Any OpenAI-compatible chat API following the Chat Completions format also works.
 - Alternatively, local agent CLIs (`claude`, `codex`, `gemini`, `opencode`) if installed/logged in (usually local machines, not Render).
 
 **For YouTube auto-upload:**
@@ -67,7 +68,7 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
    copy .env.example .env   # Windows
    # cp .env.example .env   # macOS/Linux
    ```
-   Edit `.env` (at minimum set `OPENAI_API_KEY` for headless picking if needed, and YouTube settings if uploading).
+   Edit `.env` (at minimum set `GROQ_API_KEY` for the default free/open-weight picker, and YouTube settings if uploading).
 
 5. **(Optional, for uploads) Create YouTube token locally**
    - Download OAuth client credentials as `client_secrets.json` into the project root.
@@ -83,7 +84,7 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 ## Daily usage
 
 - Open the AmberClaw web UI and submit your daily prompt (topic or URLs + focus). This is the "input prompt" workflow you can run each day.
-- Use `brain=openai` with a valid API key for automated runs. `brain=agent` will pause waiting for manual answers (exit code 3) and is not suitable for unattended server runs.
+- Use the default `brain=groq` with a free `GROQ_API_KEY` for automated runs. `brain=agent` will pause waiting for manual answers (exit code 3) and is not suitable for unattended server runs.
 - Generated clips, `clips.json`, `POSTING.md`, and check images are written under `STREAMCLIPS_HOME` (default: `<AMBERCLAW_DATA_DIR>/StreamClips/<date>/<topic>/...`).
 - Review clips before posting/uploading. Uploads can be triggered per-result from the job page, or auto-uploaded when `AUTO_UPLOAD=true` / checkbox enabled (and YouTube auth is configured).
 
@@ -109,7 +110,7 @@ sudo git clone https://github.com/riteshdr/AmberClaw.git /opt/amberclaw
 sudo bash /opt/amberclaw/deploy/oracle/setup-vm.sh
 ```
 
-The setup script builds the image, prompts for `OPENAI_API_KEY`, generates a Basic-auth
+The setup script builds the image, prompts for a free `GROQ_API_KEY`, generates a Basic-auth
 password, mounts persistent storage at `/var/lib/amberclaw`, starts the service and installs
 an hourly keepalive timer so Oracle doesn't reclaim the free instance as idle.
 
@@ -120,7 +121,7 @@ an hourly keepalive timer so Oracle doesn't reclaim the free instance as idle.
 - **Resources:** Whisper transcription and ffmpeg rendering are CPU/disk intensive and can take a long time. Use a sufficiently large instance/plan.
 - **Persistent disk:** mount a disk at `/data` (as in `render.yaml`) so `StreamClips` outputs, models/cache (`~/.streamclips` may also need persistence depending on setup), and job state survive restarts. Model downloads during build/startup increase deploy time.
 - **Long-running jobs:** clip jobs can exceed typical HTTP request expectations; AmberClaw runs them in background threads and the UI polls status. Ensure your service plan allows long-lived processes/background work as needed.
-- **Secrets/auth:** set `OPENAI_API_KEY`, `AMBERCLAW_BASIC_AUTH`, and provide `client_secrets.json`/`token.json` securely if using uploads (do not commit them). You may need to generate `token.json` locally and supply it via a secure mechanism appropriate to your deployment.
+- **Secrets/auth:** set `GROQ_API_KEY` (free, default), `AMBERCLAW_BASIC_AUTH`, and provide `client_secrets.json`/`token.json` securely if using uploads (do not commit them). You may need to generate `token.json` locally and supply it via a secure mechanism appropriate to your deployment.
 - **Networking/egress:** yt-dlp must be able to fetch from source platforms.
 
 **Basic steps:**
@@ -134,8 +135,9 @@ If Render resources/limits are insufficient for your clip workloads, run AmberCl
 ## Troubleshooting
 
 - `ffmpeg/ffprobe not found` or YouTube download issues: ensure ffmpeg and deno/node are installed and on PATH; rerun `streamclips doctor`.
+- `brain=groq` errors: verify `GROQ_API_KEY` (free from https://console.groq.com/keys), `GROQ_BASE_URL` (default `https://api.groq.com/openai/v1`), and `GROQ_MODEL` (default `openai/gpt-oss-20b`). For heavier picking, try `openai/gpt-oss-120b`.
 - `brain=openai` errors: verify `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`.
-- `needs_attention` (agent mode): automated server runs cannot answer agent prompts; switch to `brain=openai` or a configured CLI brain.
+- `needs_attention` (agent mode): automated server runs cannot answer agent prompts; switch to `brain=groq` or a configured CLI brain.
 - YouTube upload auth errors: re-generate `token.json` with `scripts/youtube_auth.py` and confirm client/token paths and API/scopes.
 - See stream-clips docs/issues and `vendor/stream-clips/README.md` / `SKILL.md` for tool-specific behavior.
 

@@ -56,9 +56,10 @@ The default `--brain auto` uses the AI CLI that is running this skill, falling b
 | Codex (ChatGPT) | `--brain codex` (calls `codex exec`) |
 | Gemini CLI | `--brain gemini` (calls `gemini -p`) |
 | OpenCode | `--brain opencode` (calls `opencode run`) |
+| Headless server / no CLI | `--brain groq` (free open-weight GPT-OSS via `GROQ_API_KEY`) or `--brain openai` (paid) |
 | Anything else, or a nested call fails | `--brain agent`: you pick the moments yourself |
 
-Add `--model <name>` to choose a model for that CLI, for example `--model sonnet` on Claude Code to use less of the subscription.
+Add `--model <name>` to choose a model for that CLI, for example `--model sonnet` on Claude Code to use less of the subscription. For `groq`, set `GROQ_MODEL` (default `openai/gpt-oss-20b`; `openai/gpt-oss-120b` is more capable).
 
 **Agent mode** (`--brain agent`). The command stops with exit code 3 after listening, and prints a list of `part_XXXXXX.prompt.txt` files, each with its `.answer.json` path.
 

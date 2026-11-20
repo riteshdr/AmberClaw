@@ -38,8 +38,9 @@ def parser():
     c.add_argument("--clips", type=int, help="clips per stream (default 3)")
     c.add_argument("--focus", help='extra direction for the picker, e.g. "clutch rounds and rage"')
     c.add_argument("--brain", default="auto",
-                   choices=["auto", "claude", "codex", "gemini", "opencode", "openai", "agent"],
-                   help="who picks the moments (default: the agent CLI that is running this; openai uses OPENAI_API_KEY)")
+                   choices=["auto", "claude", "codex", "gemini", "opencode", "openai", "groq", "agent"],
+                   help="who picks the moments (default: the agent CLI that is running this; "
+                        "groq uses free open-weight GPT-OSS via GROQ_API_KEY, openai uses OPENAI_API_KEY)")
     c.add_argument("--model", help="model name for the brain CLI, e.g. sonnet")
     c.add_argument("--section", help='only part of the stream, "1:00:00-2:30:00"')
     c.add_argument("--new-only", action="store_true",

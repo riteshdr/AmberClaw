@@ -30,9 +30,9 @@ sudo git clone https://github.com/riteshdr/AmberClaw.git /opt/amberclaw
 sudo bash /opt/amberclaw/deploy/oracle/setup-vm.sh
 ```
 
-The script installs Docker, creates `/var/lib/amberclaw` (persistent data), prompts for
-`OPENAI_API_KEY`, generates a strong Basic-auth password, opens port 10000 in the host
-firewalls, builds the image (downloads ~220 MB of Whisper models) and starts the app.
+The script installs Docker, creates `/var/lib/amberclaw` (persistent data), prompts for a free
+`GROQ_API_KEY` (open-weight GPT-OSS), generates a strong Basic-auth password, opens port 10000
+in the host firewalls, builds the image (downloads ~220 MB of Whisper models) and starts the app.
 
 Open `http://<public-ip>:10000` and log in with the printed credentials.
 
@@ -42,8 +42,9 @@ Everything is in `/opt/amberclaw/.env` (`chmod 600`):
 
 | Variable | Notes |
 |---|---|
-| `OPENAI_API_KEY` | Required for `--brain openai` (headless moment picking). |
-| `OPENAI_MODEL` | Default `gpt-4o-mini`. |
+| `GROQ_API_KEY` | Free key from https://console.groq.com/keys; required for the default `--brain groq` picker. |
+| `GROQ_BASE_URL` / `GROQ_MODEL` | Default `https://api.groq.com/openai/v1` and `openai/gpt-oss-20b`. Try `openai/gpt-oss-120b` for harder jobs. |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | Optional paid fallback with `STREAMCLIPS_BRAIN=openai`. |
 | `AMBERCLAW_BASIC_AUTH` | `user:pass,user2:pass2`. Keep this set — the UI is public. |
 | `AMBERCLAW_DATA_DIR` / `STREAMCLIPS_HOME` | Must stay `/data` and `/data/StreamClips` (mounted to `/var/lib/amberclaw`). |
 | `AUTO_UPLOAD` | Leave `false` until upload credentials are mounted. |

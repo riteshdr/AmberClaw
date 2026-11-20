@@ -65,7 +65,7 @@ def index(request: Request, _=Depends(require_auth)):
         "request": request,
         "jobs": jobs,
         "defaults": {
-            "brain": os.environ.get("STREAMCLIPS_BRAIN", "openai"),
+            "brain": os.environ.get("STREAMCLIPS_BRAIN", "groq"),
             "auto_upload": os.environ.get("AUTO_UPLOAD", "false").lower() in {"1", "true", "yes", "on"},
         },
     })
@@ -97,7 +97,7 @@ def create_job(
         "count": int(count or 5),
         "clips": int(clips or 3),
         "when": (when or "today").strip(),
-        "brain": (brain or os.environ.get("STREAMCLIPS_BRAIN", "openai")).strip(),
+        "brain": (brain or os.environ.get("STREAMCLIPS_BRAIN", "groq")).strip(),
         "language": (language or "").strip() or None,
         "extra_args": (extra_args or "").strip(),
         "auto_upload": bool(auto_upload),

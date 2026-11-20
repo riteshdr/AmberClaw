@@ -13,15 +13,17 @@ services:
       - key: STREAMCLIPS_HOME
         value: /data/StreamClips
       - key: STREAMCLIPS_BRAIN
-        value: openai
+        value: groq
       - key: AUTO_UPLOAD
         value: "false"
       - key: YOUTUBE_PRIVACY
         value: private
-      - key: OPENAI_API_KEY
+      - key: GROQ_API_KEY
         sync: false
-      - key: OPENAI_MODEL
-        value: gpt-4o-mini
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
       - key: AMBERCLAW_BASIC_AUTH
         sync: false
     disk:
