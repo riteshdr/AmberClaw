@@ -201,6 +201,7 @@ class UploadQueue:
                     it["updated_at"] = _now()
                     it["video_id"] = video_id
                     it["url"] = f"https://youtu.be/{video_id}" if video_id else None
+                    it["uploaded_at"] = _now() if status == "uploaded" else None
                     it["error"] = str(error) if error else None
                     if status == "uploaded":
                         st = d.setdefault("state", {})

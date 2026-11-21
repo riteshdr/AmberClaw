@@ -1,5 +1,7 @@
 import os
+import platform
 import secrets
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +12,8 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from amberclaw import presets as preset_lib
+from amberclaw import settings as settings_lib
 from amberclaw.queue_store import UploadQueue
 from amberclaw.runner import start_job_async
 from amberclaw.scheduler import UploadScheduler
@@ -69,9 +73,21 @@ def _safe_data_path(p: str | Path) -> Path:
     raise HTTPException(status_code=403, detail="Access outside data directory is not allowed")
 
 
+def _job_stats(jobs):
+    out = {"total": len(jobs), "queued": 0, "running": 0, "succeeded": 0,
+           "failed": 0, "needs_attention": 0, "clips": 0}
+    for j in jobs:
+        s = j.get("status")
+        if s in out:
+            out[s] += 1
+        for stream in ((j.get("result") or {}).get("streams") or []):
+            out["clips"] += len(stream.get("clips") or [])
+    return out
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, _=Depends(require_auth)):
-    jobs = store.list(50)
+    jobs = store.list(200)
     return templates.TemplateResponse("index.html", {
         "request": request,
         "jobs": jobs,
@@ -82,6 +98,9 @@ def index(request: Request, _=Depends(require_auth)):
         },
         "queue": scheduler.status(),
         "queue_items": [i for i in upload_queue.list_items(limit=60) if i.get("status") != "removed"],
+        "presets": preset_lib.PRESETS,
+        "settings": settings_lib.view(),
+        "stats": _job_stats(jobs),
     })
 
 
@@ -258,6 +277,71 @@ def queue_remove(item_id: str, _=Depends(require_auth)):
     if not item:
         raise HTTPException(status_code=404, detail="Queue item not found")
     return JSONResponse(item)
+
+
+# ------------------------- monitoring / settings -------------------------
+
+@app.get("/api/dashboard")
+def dashboard_json(_=Depends(require_auth)):
+    return JSONResponse({
+        "jobs": _job_stats(store.list(500)),
+        "queue": scheduler.status(),
+        "settings": settings_lib.view(),
+        "system": {
+            "ok": True,
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "disk_free_gb": round(shutil.disk_usage(DATA_DIR).free / 1e9, 1),
+            "disk_total_gb": round(shutil.disk_usage(DATA_DIR).total / 1e9, 1),
+            "data_dir": str(DATA_DIR),
+        },
+    })
+
+
+@app.get("/api/settings")
+def settings_json(_=Depends(require_auth)):
+    return JSONResponse(settings_lib.view())
+
+
+@app.post("/api/settings/groq-keys")
+def add_groq_keys(keys: str = Form(""), _=Depends(require_auth)):
+    if not (keys or "").strip():
+        raise HTTPException(status_code=400, detail="No keys provided")
+    added = settings_lib.add_groq_keys(keys)
+    scheduler._log(f"[settings] {added} Groq key(s) added to .env (masked in UI)")
+    return JSONResponse({"added": added, "groq": settings_lib.groq_keys()})
+
+
+@app.post("/api/settings/groq-keys/remove")
+def remove_groq_keys(index: int = Form(-1), _=Depends(require_auth)):
+    removed = settings_lib.remove_groq_keys(index)
+    scheduler._log(f"[settings] {removed} Groq key(s) removed from .env")
+    return JSONResponse({"removed": removed, "groq": settings_lib.groq_keys()})
+
+
+@app.post("/api/settings/controls")
+def update_controls(
+    daily_limit: Optional[str] = Form(None),
+    tick_minutes: Optional[str] = Form(None),
+    dry_run: Optional[str] = Form(None),
+    privacy: Optional[str] = Form(None),
+    upload_mode: Optional[str] = Form(None),
+    _=Depends(require_auth),
+):
+    kwargs = {}
+    if daily_limit is not None:
+        kwargs["daily_limit"] = int(daily_limit or 6)
+    if tick_minutes is not None:
+        kwargs["tick_minutes"] = int(tick_minutes or 10)
+    if dry_run is not None:
+        kwargs["dry_run"] = str(dry_run).strip().lower() in {"1", "true", "yes", "on"}
+    if privacy is not None:
+        kwargs["privacy"] = privacy
+    if upload_mode is not None:
+        kwargs["upload_mode"] = upload_mode
+    view = settings_lib.update_controls(**kwargs)
+    scheduler._log("[settings] upload controls updated in .env")
+    return JSONResponse(view)
 
 
 if __name__ == "__main__":

@@ -3,151 +3,135 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AmberClaw</title>
+  <title>AmberClaw — Control Dashboard</title>
   <style>
     :root { --bg:#0b0d10; --panel:#151922; --text:#e8edf2; --muted:#98a2b3; --accent:#ffbf3c; --line:#273043; --ok:#2ecc71; --bad:#ff6b6b; --warn:#f2c94c; }
     body { margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, Arial, sans-serif; background:linear-gradient(180deg,#0b0d10,#10141b); color:var(--text); }
-    .wrap { max-width: 1150px; margin: 0 auto; padding: 24px; }
-    h1 { margin: 0 0 4px; font-size: 28px; } .sub { color:var(--muted); margin-bottom: 20px; }
+    .wrap { max-width: 1240px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 4px; font-size: 28px; } h2 { font-size: 17px; margin:0 0 10px; }
+    .sub { color:var(--muted); margin-bottom: 18px; }
     .grid { display:grid; grid-template-columns: 1.05fr 1fr; gap: 16px; }
     .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; }
     label { display:block; font-size: 13px; color:var(--muted); margin: 10px 0 4px; }
     input[type=text], input[type=number], select, textarea { width:100%; box-sizing:border-box; background:#0f131a; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
-    textarea { min-height: 70px; resize: vertical; }
+    textarea { min-height: 66px; resize: vertical; }
     .row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
     .btn { margin-top:14px; background:var(--accent); color:#1a1406; border:none; padding:11px 14px; border-radius:10px; font-weight:700; cursor:pointer; width:100%; }
     .btn:hover { filter:brightness(1.05); }
+    .btn.secondary { background:#2b3445; color:#e8edf2; }
+    .btn.small { width:auto; margin-top:0; padding:5px 9px; font-size:12px; }
     .check { display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--muted); font-size:14px; }
     table { width:100%; border-collapse: collapse; font-size: 13px; }
     th, td { padding:9px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
     th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
     a { color:#ffd37a; text-decoration:none; } a:hover { text-decoration:underline; }
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap; }
-    .s-queued { background:#2b3445; color:#cbd5e1; } .s-running { background:#2a3a5f; color:#93c5fd; }
-    .s-succeeded { background:#1f3d2b; color:#86efac; } .s-failed { background:#4a2323; color:#fca5a5; }
+    .s-queued { background:#2b3445; color:#cbd5e1; } .s-running,.s-uploading,.s-processing { background:#2a3a5f; color:#93c5fd; }
+    .s-succeeded,.s-uploaded { background:#1f3d2b; color:#86efac; } .s-failed { background:#4a2323; color:#fca5a5; }
     .s-needs_attention { background:#4a3a1f; color:#fde68a; }
     .hint { font-size:12px; color:var(--muted); margin-top:4px; }
     .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; background:#64748b; }
-    .dot.run { background:#60a5fa; box-shadow:0 0 0 0 rgba(96,165,250,.7); animation:pulse 1.4s infinite; }
-    .dot.queue { background:#94a3b8; }
-    .dot.ok { background:#4ade80; } .dot.bad { background:#f87171; } .dot.warn { background:#fbbf24; }
+    .dot.run { background:#60a5fa; animation:pulse 1.4s infinite; } .dot.ok { background:#4ade80; } .dot.bad { background:#f87171; } .dot.warn { background:#fbbf24; }
     @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(96,165,250,.6)} 70%{box-shadow:0 0 0 7px rgba(96,165,250,0)} 100%{box-shadow:0 0 0 0 rgba(96,165,250,0)} }
     .stale { color:#fbbf24; font-size:11px; font-weight:600; }
-    .small { color:var(--muted); font-size:11px; line-height:1.3; }
+    .small { color:var(--muted); font-size:11px; line-height:1.35; }
     .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
     .topbar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; }
-    @media (max-width: 980px){ .grid{ grid-template-columns:1fr; } }
+    .stats { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:16px; }
+    .stat { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; text-align:center; }
+    .stat .num { font-size:22px; font-weight:800; } .stat .lbl { font-size:11px; color:var(--muted); margin-top:2px; }
+    .filters { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
+    .filters button { background:#20283a; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:4px 10px; font-size:11px; cursor:pointer; }
+    .filters button.active { background:var(--accent); color:#1a1406; border-color:var(--accent); font-weight:700; }
+    .keyrow { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--line); font-size:12px; }
+    .footer-note { margin-top:16px; text-align:center; color:var(--muted); font-size:11px; }
+    @media (max-width: 1000px){ .grid{ grid-template-columns:1fr; } .stats{ grid-template-columns:repeat(3,1fr); } }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>AmberClaw</h1>
-    <div class="sub">Daily clip generation with <code>stream-clips</code> + optional YouTube upload. Give a topic or URLs, run, and track jobs below.</div>
+    <h1>AmberClaw <span class="small">/ control dashboard</span></h1>
+    <div class="sub">Generate clips, presets, daily upload queue and settings — all in one place.</div>
+
+    <div class="stats" id="stats">
+      <div class="stat"><div class="num" id="st-total">–</div><div class="lbl">Jobs total</div></div>
+      <div class="stat"><div class="num" id="st-running">–</div><div class="lbl">Processing</div></div>
+      <div class="stat"><div class="num" id="st-queued">–</div><div class="lbl">Queued jobs</div></div>
+      <div class="stat"><div class="num" id="st-done">–</div><div class="lbl">Done</div></div>
+      <div class="stat"><div class="num" id="st-failed">–</div><div class="lbl">Failed</div></div>
+      <div class="stat"><div class="num" id="st-clips">–</div><div class="lbl">Clips generated</div></div>
+    </div>
 
     <div class="grid">
       <div class="card">
-        <h3 style="margin-top:0">New job</h3>
-        <form method="post" action="/jobs">
+        <h2>New job</h2>
+        <label>Preset template</label>
+        <select id="preset">
+          <option value="">— choose a preset (optional) —</option>
+          {% for p in presets %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+        </select>
+        <div class="hint" id="preset-note">Presets fill the fields below; you can edit anything before running.</div>
+
+        <form method="post" action="/jobs" id="job-form">
           <label>Daily prompt / topic</label>
-          <input type="text" name="prompt" placeholder='e.g. "Valorant clutch moments" or "GTA 6 funny fails"' />
-          <div class="hint">Used as topic and focus by default. You can override with the fields below.</div>
-
+          <input type="text" name="prompt" placeholder='e.g. "GTA 5 funny fails"' />
           <div class="row">
-            <div>
-              <label>Topic (override)</label>
-              <input type="text" name="topic" placeholder="e.g. Valorant" />
-            </div>
-            <div>
-              <label>Focus (override)</label>
-              <input type="text" name="focus" placeholder="e.g. clutch 1v5s and rage moments" />
-            </div>
+            <div><label>Topic (override)</label><input type="text" name="topic" placeholder="e.g. GTA 5" /></div>
+            <div><label>Focus (override)</label><input type="text" name="focus" placeholder="e.g. funniest hype moments" /></div>
           </div>
-
           <label>Stream/VOD URLs (optional, space or comma separated)</label>
-          <textarea name="urls" placeholder="https://www.youtube.com/watch?v=...&#10;https://www.twitch.tv/videos/..."></textarea>
-
+          <textarea name="urls" placeholder="https://www.youtube.com/watch?v=..."></textarea>
           <div class="row">
-            <div>
-              <label>Clips per stream</label>
-              <input type="number" name="clips" value="3" min="1" max="10" />
-            </div>
-            <div>
-              <label>Streams to find (when using topic search)</label>
-              <input type="number" name="count" value="5" min="1" max="20" />
-            </div>
+            <div><label>Clips per stream</label><input type="number" name="clips" value="3" min="1" max="10" /></div>
+            <div><label>Streams to find</label><input type="number" name="count" value="5" min="1" max="20" /></div>
           </div>
-
           <div class="row">
-            <div>
-              <label>Search window</label>
-              <select name="when">
-                <option value="hour">hour</option>
-                <option value="today" selected>today</option>
-                <option value="week">week</option>
-                <option value="month">month</option>
-              </select>
-            </div>
-            <div>
-              <label>Brain / picker</label>
-              <select name="brain">
-                <option value="groq" {% if defaults.brain == 'groq' %}selected{% endif %}>groq (free open-weight, recommended)</option>
-                <option value="openai" {% if defaults.brain == 'openai' %}selected{% endif %}>openai (paid API key)</option>
-                <option value="auto" {% if defaults.brain == 'auto' %}selected{% endif %}>auto (local CLIs)</option>
-                <option value="claude">claude</option>
-                <option value="codex">codex</option>
-                <option value="gemini">gemini</option>
-                <option value="opencode">opencode</option>
-                <option value="agent">agent (manual)</option>
-              </select>
-            </div>
+            <div><label>Search window</label><select name="when">
+              <option value="hour">hour</option><option value="today">today</option>
+              <option value="week" selected>week</option><option value="month">month</option>
+            </select></div>
+            <div><label>Brain / picker</label><select name="brain">
+              <option value="groq" {% if defaults.brain == 'groq' %}selected{% endif %}>groq (free)</option>
+              <option value="openai">openai (paid)</option>
+              <option value="auto">auto (local CLIs)</option>
+              <option value="claude">claude</option><option value="codex">codex</option>
+              <option value="gemini">gemini</option><option value="opencode">opencode</option>
+              <option value="agent">agent (manual)</option>
+            </select></div>
           </div>
-
           <label>Language code (optional)</label>
-          <input type="text" name="language" placeholder="en = Roman Hinglish (default), hi = Devanagari, blank = auto" />
-
-          <label class="check"><input type="checkbox" name="find" checked /> Find streams by topic when no URLs are provided</label>
-          <label class="check"><input type="checkbox" name="auto_upload" {% if defaults.auto_upload %}checked{% endif %} /> {% if defaults.upload_mode == 'queue' %}Add generated clips to the daily YouTube upload queue (6/day by default){% else %}Auto-upload generated clips to YouTube right after this job{% endif %} (requires configured OAuth/token)</label>
-
+          <input type="text" name="language" placeholder="blank = Roman Hinglish captions (default)" />
+          <label class="check"><input type="checkbox" name="find" checked /> Find streams by topic when no URLs are given</label>
+          <label class="check"><input type="checkbox" name="auto_upload" {% if defaults.auto_upload %}checked{% endif %} /> {% if defaults.upload_mode == 'queue' %}Add clips to the daily YouTube upload queue{% else %}Upload clips right after this job{% endif %}</label>
           <button class="btn" type="submit">Run AmberClaw job</button>
         </form>
-        <div class="hint" style="margin-top:10px">Tip: for unattended/server runs the default <b>brain=groq</b> uses free open-weight GPT-OSS models with a free <code>GROQ_API_KEY</code> (https://console.groq.com/keys). <code>brain=agent</code> needs manual answers and will pause. If a job shows <b>stale/no heartbeat</b>, the worker likely stopped/restarted.</div>
       </div>
 
       <div class="card">
-        <div class="topbar">
-          <h3 style="margin:0">Recent jobs</h3>
-          <div class="small" id="live-note">Live status • auto-refresh</div>
+        <div class="topbar"><h2>Jobs</h2><div class="small" id="live-note">Live • auto-refresh</div></div>
+        <div class="filters" id="filters">
+          <button data-f="all" class="active">All</button>
+          <button data-f="queued">Queued</button>
+          <button data-f="running">Processing</button>
+          <button data-f="succeeded">Done</button>
+          <button data-f="failed">Failed</button>
         </div>
-        {% if not jobs %}
-          <div class="hint" id="empty">No jobs yet.</div>
-        {% endif %}
         <table>
-          <thead><tr><th>Job</th><th>Status</th><th>Prompt/Topic</th><th>Activity</th></tr></thead>
-          <tbody id="jobs-body">
-          {% for j in jobs %}
-            <tr>
-              <td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td>
-              <td><span class="pill s-{{ j.status }}">{{ j.status }}</span></td>
-              <td>{{ (j.payload.topic or j.payload.prompt or '-')[:50] }}</td>
-              <td class="small">{{ j.updated_at }}<br><span class="mono">{{ ((j.log or [''])[-1])[:80] }}</span></td>
-            </tr>
-          {% endfor %}
-          </tbody>
+          <thead><tr><th>Job</th><th>Status</th><th>Topic</th><th>Activity</th></tr></thead>
+          <tbody id="jobs-body"><tr><td colspan="4" class="small">Loading…</td></tr></tbody>
         </table>
+        <div class="hint" id="system-note">System: loading…</div>
       </div>
     </div>
 
     <div class="card" style="margin-top:16px" id="queue-card">
-      <div class="topbar">
-        <h3 style="margin:0">Daily YouTube upload queue</h3>
-        <div class="small" id="queue-mode">Generate now, upload a few each day</div>
-      </div>
+      <div class="topbar"><h2>Daily YouTube upload queue</h2><div class="small">Generate now, upload a few each day</div></div>
       <div class="hint" id="queue-summary">Loading queue status…</div>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px">
-        <button class="btn" style="width:auto; margin-top:0" id="btn-run">Run batch now</button>
-        <button class="btn" style="width:auto; margin-top:0; background:#2b3445; color:#e8edf2" id="btn-pause">Pause</button>
-        <button class="btn" style="width:auto; margin-top:0; background:#2b3445; color:#e8edf2" id="btn-resume">Resume</button>
-        <button class="btn" style="width:auto; margin-top:0; background:#2b3445; color:#e8edf2" id="btn-scan">Scan old clips</button>
+        <button class="btn small" id="btn-run">Run batch now</button>
+        <button class="btn small secondary" id="btn-pause">Pause</button>
+        <button class="btn small secondary" id="btn-resume">Resume</button>
+        <button class="btn small secondary" id="btn-scan">Scan old clips</button>
       </div>
       <div id="queue-logs" class="small mono" style="margin-top:10px; max-height:90px; overflow:auto"></div>
       <table style="margin-top:10px">
@@ -155,9 +139,46 @@
         <tbody id="queue-body"><tr><td colspan="5" class="small">Loading…</td></tr></tbody>
       </table>
     </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="topbar"><h2>Settings &amp; secrets</h2><div class="small">Stored in <span class="mono">{{ settings.env_path }}</span> only</div></div>
+      <div class="grid">
+        <div>
+          <h3 style="font-size:14px">Groq API keys (free)</h3>
+          <div class="hint">Keys are written only to the local <code>.env</code> file (gitignored). The UI only ever shows masked values.</div>
+          <div id="key-list" style="margin:10px 0"></div>
+          <textarea id="new-keys" placeholder="Paste one or more gsk_ keys, separated by comma or newline"></textarea>
+          <button class="btn small" id="btn-add-keys">Add keys</button>
+        </div>
+        <div>
+          <h3 style="font-size:14px">Upload controls</h3>
+          <div class="row">
+            <div><label>Daily upload limit</label><input type="number" id="cfg-limit" min="0" max="1000" value="{{ settings.daily_limit }}" /></div>
+            <div><label>Scheduler tick (minutes)</label><input type="number" id="cfg-tick" min="1" max="1440" value="{{ settings.tick_minutes }}" /></div>
+          </div>
+          <div class="row">
+            <div><label>Privacy</label><select id="cfg-privacy">
+              <option value="public" {% if settings.privacy == 'public' %}selected{% endif %}>public</option>
+              <option value="unlisted" {% if settings.privacy == 'unlisted' %}selected{% endif %}>unlisted</option>
+              <option value="private" {% if settings.privacy == 'private' %}selected{% endif %}>private</option>
+            </select></div>
+            <div><label>Upload mode</label><select id="cfg-mode">
+              <option value="queue" {% if settings.upload_mode == 'queue' %}selected{% endif %}>queue (6/day)</option>
+              <option value="immediate" {% if settings.upload_mode == 'immediate' %}selected{% endif %}>immediate</option>
+            </select></div>
+          </div>
+          <label class="check"><input type="checkbox" id="cfg-dry" {% if settings.dry_run %}checked{% endif %} /> Dry run (no YouTube quota spent)</label>
+          <button class="btn small" id="btn-save-cfg">Save controls</button>
+          <div class="hint" id="cfg-note">Tick interval changes apply on next app restart.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-note">AmberClaw • clip generation via stream-clips • uploads credited to original creators</div>
   </div>
 
   <script>
+    const PRESETS = {{ presets | tojson }};
     function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
     function ago(iso){
       if(!iso) return '';
@@ -171,60 +192,95 @@
     function isStale(j){
       if(!['running','queued'].includes(j.status) || !j.updated_at) return false;
       const t = new Date(j.updated_at.replace(' ', 'T').replace(/Z?$/, 'Z')).getTime();
-      if(isNaN(t)) return false;
-      return (Date.now()-t) > 180000; // 3 min without heartbeat/log update
+      return !isNaN(t) && (Date.now()-t) > 180000;
     }
     function dotClass(j){
       if(isStale(j)) return 'warn';
-      if(j.status==='running') return 'run';
-      if(j.status==='queued') return 'queue';
-      if(j.status==='succeeded') return 'ok';
-      if(j.status==='failed') return 'bad';
-      return 'warn';
+      return j.status==='running' ? 'run' : j.status==='queued' ? 'queue' : j.status==='succeeded' ? 'ok' : j.status==='failed' ? 'bad' : 'warn';
     }
-    function render(jobs){
+    function setVal(name, val){ const el = document.querySelector(`[name="${name}"]`); if(el) el.value = val || ''; }
+
+    // ----- presets -----
+    document.getElementById('preset').addEventListener('change', e => {
+      const p = PRESETS.find(x => x.id === e.target.value);
+      if(!p) return;
+      const f = p.fields;
+      setVal('prompt', f.topic); setVal('topic', f.topic); setVal('focus', f.focus);
+      setVal('count', f.count); setVal('clips', f.clips); setVal('when', f.when);
+      setVal('brain', f.brain); setVal('language', f.language || '');
+      document.querySelector('[name=find]').checked = !!f.find;
+      document.querySelector('[name=auto_upload]').checked = !!f.auto_upload;
+      document.getElementById('preset-note').textContent = p.description;
+    });
+
+    // ----- jobs -----
+    let jobCache = [], currentFilter = 'all';
+    document.getElementById('filters').addEventListener('click', e => {
+      if(e.target.tagName !== 'BUTTON') return;
+      currentFilter = e.target.dataset.f;
+      document.querySelectorAll('#filters button').forEach(b => b.classList.toggle('active', b === e.target));
+      renderJobs();
+    });
+    function renderJobs(){
       const body = document.getElementById('jobs-body');
-      if(!body) return;
-      if(!jobs.length){ body.innerHTML = '<tr><td colspan="4" class="small">No jobs yet.</td></tr>'; return; }
+      const jobs = jobCache.filter(j => currentFilter === 'all' || j.status === currentFilter);
+      if(!jobs.length){ body.innerHTML = '<tr><td colspan="4" class="small">No jobs in this view.</td></tr>'; return; }
       body.innerHTML = jobs.map(j => {
         const stale = isStale(j);
         const last = (j.last_log || '').slice(0, 90);
-        const topic = (j.topic || '-').slice(0, 50);
         const act = `${esc(j.updated_at||'')}<br><span class="small">(${ago(j.updated_at)})</span>${stale ? '<br><span class="stale">⚠ stale / no heartbeat</span>' : ''}${last ? `<br><span class="mono small">${esc(last)}</span>` : ''}`;
+        const label = j.status === 'running' ? 'processing' : j.status;
         return `<tr>
           <td><a href="/jobs/${esc(j.id)}">${esc(j.id)}</a></td>
-          <td><span class="dot ${dotClass(j)}"></span><span class="pill s-${esc(j.status)}">${esc(j.status)}</span></td>
-          <td>${esc(topic)}</td>
+          <td><span class="dot ${dotClass(j)}"></span><span class="pill s-${esc(j.status)}">${esc(label)}</span></td>
+          <td>${esc((j.topic||'-').slice(0,50))}</td>
           <td class="small">${act}</td>
         </tr>`;
       }).join('');
     }
-    async function refresh(){
+    async function refreshJobs(){
       try{
         const r = await fetch('/api/jobs', {cache:'no-store'});
-        if(!r.ok) return;
-        const data = await r.json();
-        render(data.jobs || []);
+        if(r.ok){ jobCache = (await r.json()).jobs || []; renderJobs(); }
       }catch(e){}
     }
-    refresh();
-    setInterval(refresh, 4000);
 
-    // ----- daily upload queue -----
-    async function queuePost(url){
+    // ----- dashboard stats -----
+    async function refreshDashboard(){
       try{
-        const r = await fetch(url, {method:'POST', cache:'no-store'});
-        if(r.ok){ await refreshQueue(); }
-        else { alert('Request failed: ' + r.status); }
+        const r = await fetch('/api/dashboard', {cache:'no-store'});
+        if(!r.ok) return;
+        const d = await r.json();
+        const j = d.jobs || {}, c = d.queue || {}, s = d.system || {};
+        document.getElementById('st-total').textContent = j.total ?? 0;
+        document.getElementById('st-running').textContent = j.running ?? 0;
+        document.getElementById('st-queued').textContent = (j.queued ?? 0) + (c.counts?.pending ?? 0);
+        document.getElementById('st-done').textContent = j.succeeded ?? 0;
+        document.getElementById('st-failed').textContent = (j.failed ?? 0) + (c.counts?.failed ?? 0);
+        document.getElementById('st-clips').textContent = j.clips ?? 0;
+        document.getElementById('system-note').textContent =
+          `System: ${s.ok ? 'online' : 'offline'} • Python ${s.python||'?'} • disk free ${s.disk_free_gb??'?'} GB / ${s.disk_total_gb??'?'} GB`;
+        renderSettings(d.settings);
+      }catch(e){}
+    }
+
+    // ----- queue -----
+    async function postForm(url, data){
+      const fd = new FormData();
+      Object.entries(data).forEach(([k,v]) => fd.append(k, v));
+      try{
+        const r = await fetch(url, {method:'POST', body:fd, cache:'no-store'});
+        if(!r.ok) alert('Request failed: ' + r.status);
       }catch(e){ alert('Request failed: ' + e); }
+      refreshQueue(); refreshDashboard();
     }
     document.getElementById('btn-run').onclick = () => {
-      if(confirm('Upload a batch now? This uses YouTube quota (up to the daily limit).')) queuePost('/api/queue/run');
+      if(confirm('Upload a batch now? This uses YouTube quota (up to the daily limit).')) postForm('/api/queue/run', {});
     };
-    document.getElementById('btn-pause').onclick = () => queuePost('/api/queue/pause');
-    document.getElementById('btn-resume').onclick = () => queuePost('/api/queue/resume');
+    document.getElementById('btn-pause').onclick = () => postForm('/api/queue/pause', {});
+    document.getElementById('btn-resume').onclick = () => postForm('/api/queue/resume', {});
     document.getElementById('btn-scan').onclick = () => {
-      if(confirm('Add clips from ALL previous jobs to the upload queue? Old clips with imperfect captions may be included.')) queuePost('/api/queue/scan');
+      if(confirm('Add clips from ALL previous jobs to the upload queue? Old clips with imperfect captions may be included.')) postForm('/api/queue/scan', {});
     };
 
     function renderQueue(data){
@@ -237,23 +293,21 @@
         `· <b>${left}</b> slot(s) left · pending <b>${c.pending||0}</b> ` +
         `· uploaded <b>${c.uploaded||0}</b> · failed <b>${c.failed||0}</b>` +
         (s.paused ? ' · <span class="stale">PAUSED</span>' : '');
-      const logs = (s.logs||[]).slice(0,6).map(x => esc(x)).join('<br>');
-      document.getElementById('queue-logs').innerHTML = logs || 'No scheduler activity yet.';
+      document.getElementById('queue-logs').innerHTML = (s.logs||[]).slice(0,6).map(x => esc(x)).join('<br>') || 'No scheduler activity yet.';
       const body = document.getElementById('queue-body');
       const items = data.items || [];
       if(!items.length){ body.innerHTML = '<tr><td colspan="5" class="small">Queue is empty. Generate clips or click “Scan old clips”.</td></tr>'; return; }
       body.innerHTML = items.slice(0,40).map(i => {
         const st = i.status || 'pending';
-        const pill = st==='uploaded' ? 's-succeeded' : st==='failed' ? 's-failed' : st==='uploading' ? 's-running' : 's-queued';
+        const pill = st==='uploaded' ? 's-uploaded' : st==='failed' ? 's-failed' : st==='uploading' ? 's-uploading' : 's-queued';
         const link = i.url ? `<a href="${esc(i.url)}" target="_blank">watch</a>` : '';
         const err = i.error ? `<br><span class="stale" title="${esc(i.error)}">error</span>` : '';
         const action = st==='failed'
-          ? `<button class="btn" style="width:auto;margin-top:0;padding:4px 8px" onclick="queuePost('/api/queue/item/${esc(i.id)}/retry')">retry</button> `
+          ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/retry',{})">retry</button> `
           : st==='pending'
-          ? `<button class="btn" style="width:auto;margin-top:0;padding:4px 8px;background:#2b3445;color:#e8edf2" onclick="queuePost('/api/queue/item/${esc(i.id)}/remove')">remove</button> `
-          : '';
+          ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/remove',{})">remove</button> ` : '';
         return `<tr>
-          <td class="small mono">${esc(i.file)}</td>
+          <td class="small mono">${esc(i.file)}<br><span class="small">${esc((i.meta_title||'').slice(0,44))}</span></td>
           <td class="small">${esc((i.topic||'') + ' / ' + (i.creator||''))}</td>
           <td><span class="pill ${pill}">${esc(st)}</span>${err}</td>
           <td class="small">${esc((i.uploaded_at||i.updated_at||'').slice(0,16))} ${link}</td>
@@ -267,8 +321,46 @@
         if(r.ok) renderQueue(await r.json());
       }catch(e){}
     }
-    refreshQueue();
+
+    // ----- settings / secrets -----
+    function renderSettings(s){
+      if(!s || !s.groq) return;
+      const list = document.getElementById('key-list');
+      if(!s.groq.count){ list.innerHTML = '<div class="small">No keys configured. Add at least one free Groq key.</div>'; }
+      else {
+        list.innerHTML = s.groq.masked.map((m,i) =>
+          `<div class="keyrow"><span class="mono">#${i+1} ${esc(m)}</span>` +
+          `<button class="btn small secondary" onclick="postForm('/api/settings/groq-keys/remove',{index:${i}})">remove</button></div>`
+        ).join('');
+      }
+      const limit = document.getElementById('cfg-limit'), tick = document.getElementById('cfg-tick');
+      const dry = document.getElementById('cfg-dry'), privacy = document.getElementById('cfg-privacy'), mode = document.getElementById('cfg-mode');
+      if(document.activeElement !== limit) limit.value = s.daily_limit;
+      if(document.activeElement !== tick) tick.value = s.tick_minutes;
+      if(document.activeElement !== dry) dry.checked = !!s.dry_run;
+      if(document.activeElement !== privacy) privacy.value = s.privacy;
+      if(document.activeElement !== mode) mode.value = s.upload_mode;
+    }
+    document.getElementById('btn-add-keys').onclick = () => {
+      const v = document.getElementById('new-keys').value.trim();
+      if(!v){ alert('Paste at least one key first.'); return; }
+      postForm('/api/settings/groq-keys', {keys:v});
+      document.getElementById('new-keys').value = '';
+    };
+    document.getElementById('btn-save-cfg').onclick = () => {
+      postForm('/api/settings/controls', {
+        daily_limit: document.getElementById('cfg-limit').value,
+        tick_minutes: document.getElementById('cfg-tick').value,
+        dry_run: document.getElementById('cfg-dry').checked ? 'true' : 'false',
+        privacy: document.getElementById('cfg-privacy').value,
+        upload_mode: document.getElementById('cfg-mode').value,
+      });
+    };
+
+    refreshJobs(); refreshQueue(); refreshDashboard();
+    setInterval(refreshJobs, 4000);
     setInterval(refreshQueue, 8000);
+    setInterval(refreshDashboard, 8000);
   </script>
 </body>
 </html>
