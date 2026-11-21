@@ -106,7 +106,7 @@ def make(index, pick, ctx, cfg, memory):
     # `language` drives the whole-stream scan; captions have their own default so a
     # Hindi stream (language=hi) still gets Roman Hinglish captions.
     cap_lang = cfg.get("caption_language") or ctx["language"]
-    words, _ = listen.transcribe(cfg["caption_model"], decode(part, 16000, offset, length),
+    words, _, _ = listen.transcribe(cfg["caption_model"], decode(part, 16000, offset, length),
                                  cap_lang, initial_prompt=cfg.get("caption_prompt"))
     ass = subs.write(words, length, clips_dir / f"{name}.ass", cfg)
     graph, look, seam = frame.plan(part, offset, length, info, cfg, memory, ctx.get("cam"))

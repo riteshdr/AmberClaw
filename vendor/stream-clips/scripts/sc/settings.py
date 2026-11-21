@@ -11,6 +11,9 @@ DEFAULTS = {
     # Hinglish is normally detected as "en" or "hi" by Whisper, so both are allowed.
     # An empty list disables the filter. Override in settings.json if ever needed.
     "allowed_languages": ["en", "hi"],
+    # Tiny Whisper can mislabel Hinglish gaming audio as another Indic language with
+    # low confidence. Below this confidence, retry forced English instead of rejecting.
+    "language_confidence": 0.65,
 
     # listening
     "scan_model": "tiny",            # Whisper model for the whole stream (fast)

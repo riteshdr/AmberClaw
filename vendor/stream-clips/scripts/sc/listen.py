@@ -30,7 +30,7 @@ def whisper(name):
 
 
 def transcribe(model_name, samples, language=None, offset=0.0, initial_prompt=None):
-    """[{s, e, w}] word timings (seconds + offset) and the detected language."""
+    """Return word timings, detected language, and detection confidence."""
     np.seterr(all="ignore")
     kwargs = dict(language=language, word_timestamps=True, vad_filter=True,
                   vad_parameters={"min_silence_duration_ms": 400},
@@ -47,7 +47,7 @@ def transcribe(model_name, samples, language=None, offset=0.0, initial_prompt=No
             if text:
                 words.append({"s": round(w.start + offset, 2), "e": round(w.end + offset, 2),
                               "w": text})
-    return words, info.language
+    return words, str(info.language or "").lower(), float(info.language_probability or 0.0)
 
 
 def _volume(samples):
@@ -84,10 +84,22 @@ def scan(audio, total, lo, hi, work, cfg, live=False):
         if length <= 1:
             continue
         block = read_json(path)
-        if not block or (block.get("length", 0) + 1 < length):
+        min_conf = float(cfg.get("language_confidence", 0.65))
+        stale = not block or (block.get("length", 0) + 1 < length)
+        if not stale and allowed and not language:
+            cached_lang = str(block.get("language") or "").lower()
+            if cached_lang and cached_lang not in allowed and float(block.get("language_probability") or 0.0) < min_conf:
+                stale = True
+        if stale:
             samples = decode(audio, RATE, start, length)
-            got, lang = transcribe(cfg["scan_model"], samples, language, offset=start)
-            block = {"length": length, "words": got, "volume": _volume(samples), "language": lang}
+            got, lang, prob = transcribe(cfg["scan_model"], samples, language, offset=start)
+            # The tiny scan model sometimes guesses a wrong Indic language with low
+            # confidence for Hinglish gaming audio. Retry forced English instead of
+            # dropping a valid creator.
+            if allowed and not language and lang and lang not in allowed and prob < min_conf:
+                got, lang, prob = transcribe(cfg["scan_model"], samples, "en", offset=start)
+            block = {"length": length, "words": got, "volume": _volume(samples),
+                     "language": lang, "language_probability": prob}
             if not (live and length < size):
                 write_json(path, block)
         block_lang = str(block.get("language") or "").lower()
