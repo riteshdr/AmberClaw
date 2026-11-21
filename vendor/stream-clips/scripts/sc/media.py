@@ -32,6 +32,11 @@ def ytdlp_args(url, cookies=None):
         args += ["--cookies", cookie_file]
     elif cookies:
         args += ["--cookies-from-browser", cookies]
+    # Datacenter IPs get YouTube's bot-check. YOUTUBE_PROXY points at a trusted
+    # home-IP proxy (e.g. an SSH reverse tunnel), so downloads look like a normal user.
+    proxy = os.environ.get("YOUTUBE_PROXY", "").strip()
+    if proxy:
+        args += ["--proxy", proxy]
     return args
 
 
