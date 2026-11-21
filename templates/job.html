@@ -34,7 +34,7 @@
 </head>
 <body data-job-id="{{ job.id }}" data-status="{{ job.status }}" data-updated="{{ job.updated_at }}" data-created="{{ job.created_at }}">
   <div class="wrap">
-    <p><a href="/">&larr; Back to AmberClaw</a></p>
+    <p><a href="/">&larr; Back to AmberClaw</a><button class="btn small secondary" style="margin-left:10px" onclick="location.reload()">Refresh results</button></p>
     <h1 style="margin:0 0 6px">Job {{ job.id }}</h1>
     <div class="muted row">
       <span>Status: <span class="pill s-{{ job.status }}" id="status">{{ job.status }}</span></span>
@@ -114,7 +114,12 @@
     const jobId = document.body.dataset.jobId;
     const terminal = new Set(['succeeded','failed','needs_attention']);
     function esc(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    function parseIso(iso){ if(!iso) return NaN; return new Date(iso.replace(' ', 'T').replace(/Z?$/, 'Z')).getTime(); }
+    function parseIso(iso){
+      if(!iso) return NaN;
+      const s = String(iso).trim().replace(' ', 'T');
+      if(/([zZ]|[+-]\d{2}:?\d{2})$/.test(s)) return new Date(s).getTime();
+      return new Date(s + 'Z').getTime();
+    }
     function progressFromLog(log){
       const seen = {};
       log.forEach(l => {
@@ -173,16 +178,22 @@
     updateBanner({status: document.body.dataset.status, updated_at: document.body.dataset.updated,
                   log: {{ (job.log or []) | tojson }}});
 
+    let lastStatus = document.body.dataset.status || '';
+    // A page that loaded in a terminal state never auto-reloads (no refresh loop).
+    let stopped = terminal.has(lastStatus), reloaded = false, pollBusy = false;
     async function poll(){
-      const status = document.body.dataset.status;
+      if(stopped || pollBusy || document.hidden) return;
+      pollBusy = true;
       try {
         const r = await fetch(`/api/jobs/${jobId}`, {cache:'no-store'});
         if (!r.ok) return;
         const j = await r.json();
-        document.body.dataset.status = j.status;
+        const wasTerminal = terminal.has(lastStatus);
+        lastStatus = j.status || '';
+        document.body.dataset.status = lastStatus;
         document.body.dataset.updated = j.updated_at || '';
         const st = document.getElementById('status');
-        st.textContent = j.status; st.className = 'pill s-' + j.status;
+        st.textContent = lastStatus; st.className = 'pill s-' + lastStatus;
         document.getElementById('updated').textContent = j.updated_at || '';
         const log = (j.log || []);
         document.getElementById('log').textContent = log.join('\n');
@@ -190,10 +201,16 @@
         const wrap = document.getElementById('error-wrap');
         if (j.error && wrap) { wrap.style.display = 'block'; document.getElementById('err').textContent = j.error; }
         updateBanner(j);
-        if (terminal.has(j.status)) { setTimeout(()=>location.reload(), 600); return; }
-      } catch(e){}
+        // Reload exactly once when the job first finishes, so fresh clip links appear.
+        if (terminal.has(lastStatus) && !wasTerminal && !reloaded) {
+          reloaded = true; stopped = true;
+          setTimeout(()=>location.reload(), 700);
+        } else if (terminal.has(lastStatus)) {
+          stopped = true;
+        }
+      } catch(e){} finally { pollBusy = false; }
     }
-    setInterval(poll, 3000);
+    if(!stopped) setInterval(poll, 3000);
   </script>
 </body>
 </html>

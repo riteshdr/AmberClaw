@@ -37,10 +37,17 @@ Moment types that do well for <<TOPIC>>:
   tip       a specific, useful tip or insight a viewer can use right away
   story     a short story with a clear punchline
 
+LANGUAGE RULE (strict): write every title, caption and hashtag ONLY in the language the \
+creator is speaking here - natural English, or Roman Hinglish / Hindi (Hindi written in \
+Latin letters, e.g. "bhai", "kya kar rahe ho", "waah", "mil gaya"). Never use Devanagari \
+or any other script, and never mix in Tamil, Telugu, Malayalam, Bengali or any other \
+language. If you are unsure, write simple Roman Hinglish. This is non-negotiable.
+
 Pick <<K>> moments from this part. Always return at least one moment: choose the \
 strongest available even if they are only moderately exciting. Do not answer [] unless \
 this part has literally no spoken words. Each moment must:
   - start just before its hook, never on filler ("uh", "anyway", "so yeah", "okay so")
+  - lead with a scroll-stopping hook in the first 3 words of the title
   - make sense with zero context and pay off before it ends
   - be <<MIN>>-<<MAX>> seconds long, lie inside <<LO>>-<<HI>>, and not overlap another pick
 Skip sponsor reads, reading donations or subs, menus, loading screens, silence, and \
@@ -50,13 +57,15 @@ Reply with a JSON array and nothing else (no prose, no markdown fence). Example 
 [{"start": 1204.0, "end": 1239.5, "type": "reaction", "title": "...", "caption": "...", \
 "hashtags": ["#..."], "score": 72, "why": "..."}]
 
-title: the text bar shown over the clip. 3-10 words, names the creator, CAPITALS on the 1-3 \
-words that carry the drama, teases the payoff without giving it away, at most one emoji.
-caption: the post text, under 140 characters, ending with a question or a nudge to comment.
-hashtags: 3-6 tags: the topic, the creator, one broad tag.
+title: the text bar shown over the clip. 3-10 words, credits the creator by name, CAPITALS \
+on the 1-3 words that carry the drama, teases the payoff without giving it away, at most \
+one emoji. Must read naturally and be grammatically correct in the chosen language.
+caption: the post text, under 140 characters, a full natural sentence in the same language, \
+ending with a question or a nudge to comment. No mangled or half-translated words.
+hashtags: 3-6 tags: the topic, the creator, one broad tag; all in the chosen language.
 score: 1-100, how likely a viewer watches to the end. Be strict: 80+ only for clips you \
 would bet money on.
-why: one short sentence.
+why: one short sentence explaining the viral hook.
 
 TRANSCRIPT <<LO>>-<<HI>>:
 <<TEXT>>

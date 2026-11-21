@@ -5,7 +5,7 @@ the AWS Console in a browser. It ends with the AmberClaw dashboard running and t
 **GTA 5 — 100 viral shorts** job submitted.
 
 **What we build:** Ubuntu 24.04 LTS, `m6i.large` (2 vCPU / 8 GB), 100 GiB gp3 disk, Elastic IP,
-Docker Compose, HTTP on port 10000 with Basic auth. HTTPS via Caddy is optional, later.
+Docker Compose, Basic auth, and free HTTPS at `https://project7.me` via Caddy / Let's Encrypt.
 
 **Cost:** about **USD 78/month** (m6i.large ~USD 70 + 100 GiB gp3 ~USD 8, Mumbai). Groq is free.
 YouTube uploads use your account's free quota (~6/day).
@@ -83,10 +83,12 @@ region (IAM is global, but EC2/EIP/security groups are regional).
    | Rule | Type | Port | Source |
    |---|---|---|---|
    | SSH | SSH | 22 | **My IP** |
-   | App UI | Custom TCP | 10000 | **My IP** |
-5. *My IP* is your current public IP as AWS detects it. If your ISP changes your IP, edit this
-   rule later. Only use `0.0.0.0/0` for port 10000 if you accept Basic-auth credentials over
-   plain HTTP (HTTPS can be added in Step 11).
+   | HTTP | HTTP | 80 | `0.0.0.0/0` and `::/0` |
+   | HTTPS | HTTPS | 443 | `0.0.0.0/0` and `::/0` |
+   | App UI (fallback) | Custom TCP | 10000 | **My IP** |
+5. *My IP* is your current public IP as AWS detects it. Ports 80/443 must be public so Caddy can
+   issue and renew the Let's Encrypt certificate for `project7.me`. Port 10000 stays restricted
+   to your IP as a direct-HTTP fallback; normal access is `https://project7.me`.
 6. **Outbound rules**: leave the default *Allow all*.
 7. Click **Create security group**.
 
@@ -203,10 +205,11 @@ docker compose -f deploy/aws/docker-compose.yml logs -f
 
 ## STEP 9 — Submit the first real job
 
-1. In **New job**, open the **Preset template** dropdown → choose **GTA 5 — 100 viral shorts**.
-2. Confirm the filled values: topic `GTA 5`, focus about funny/hype Hinglish moments,
+1. In **New job**, open the **Preset template** dropdown → choose **GTA 6 — 100 viral shorts**.
+2. Confirm the filled values: topic `GTA 6`, focus about funny/hype Roman Hinglish moments,
    streams `20`, clips per stream `5`, window `week`, brain `groq`,
    **Find streams** checked, **Add clips to the daily YouTube upload queue** checked.
+   Only Hindi/Hinglish/English creators are kept; other languages are skipped automatically.
 3. Click **Run AmberClaw job**. The job appears in the table as *processing*.
 4. Expect **~12–17 hours** of generation for 20 long streams. Generated clips are queued;
    the scheduler uploads **6/day** within YouTube's free quota. Monitor everything from the
@@ -236,18 +239,64 @@ Create budget** → Cost budget, monthly, **USD 100**, add your email for an ale
 
 ---
 
-## STEP 11 — Add HTTPS later (optional, free)
+## STEP 11 — Domain `project7.me` + free HTTPS (Caddy / Let's Encrypt)
 
-1. On the instance: `sudo nano /opt/amberclaw/.env` → add `DOMAIN=claw.yourdomain.com`.
-2. At your DNS provider, create an **A record** for that hostname → the Elastic IP.
-3. EC2 security group `amberclaw-sg` → add inbound rules for **80** and **443** from `0.0.0.0/0`.
-4. On the instance:
-   ```bash
-   cd /opt/amberclaw
-   docker compose -f deploy/aws/docker-compose.yml --profile tls up -d
-   ```
-   Caddy obtains a Let's Encrypt certificate automatically. You can then change the port 10000
-   security group rule back to *My IP* only.
+The Caddyfile in this repo is already configured for `project7.me` and `www.project7.me`.
+Caddy runs by default in the compose file, redirects HTTP → HTTPS, and auto-renews the certificate.
+
+### 11.1 Point DNS at the server (do this where you bought the domain)
+
+Log in to your domain registrar's DNS management page (e.g. GoDaddy, Namecheap, Cloudflare,
+BigRock, etc.) and set these **A records**. If a record already exists, **edit** its value
+rather than adding a duplicate.
+
+| Type | Name / Host | Value / Points to | TTL |
+|---|---|---|---|
+| A | `project7.me` (often `@` or "root") | `13.127.103.201` | 300 (or Automatic) |
+| A | `www` (creates `www.project7.me`) | `13.127.103.201` | 300 (or Automatic) |
+
+- If your provider also shows an AAAA (IPv6) record for these names, **delete it** — the server
+  has no public IPv6, and a stale AAAA can break certificate issuance.
+- If the registrar offers "Cloudflare proxy" (orange cloud), leave it **DNS only / grey cloud**
+  until HTTPS is verified; proxying can interfere with Let's Encrypt's HTTP challenge.
+- DNS changes can take a few minutes to a few hours. Verify from your PC with:
+  ```powershell
+  nslookup project7.me
+  nslookup www.project7.me
+  ```
+  Both must show `13.127.103.201` before continuing.
+
+### 11.2 Open ports 80 and 443 in AWS
+
+AWS Console → **EC2 → Security Groups → `amberclaw-sg` → Inbound rules → Edit inbound rules**:
+- **Add rule** → Type **HTTP** → Port `80` → Source **Anywhere-IPv4** (`0.0.0.0/0`).
+- **Add rule** → Type **HTTPS** → Port `443` → Source **Anywhere-IPv4** (`0.0.0.0/0`).
+- (IPv6 optional: add **Anywhere-IPv6** `::/0` for both if you added AAAA records later.)
+- Save rules. Keep port `10000` restricted to **My IP** as a fallback.
+
+### 11.3 Deploy (starts the Caddy container)
+
+```bash
+cd /opt/amberclaw
+sudo git pull --ff-only
+sudo docker compose -f deploy/aws/docker-compose.yml up -d --build
+sudo docker compose -f deploy/aws/docker-compose.yml ps
+```
+
+You should see both `amberclaw` and `caddy` running. Caddy obtains the certificate on first
+request, so visit `https://project7.me/health` once and wait a few seconds.
+
+### 11.4 Verify
+
+- `https://project7.me/health` → `{"ok":true}` (no browser certificate warning).
+- `https://www.project7.me/` → dashboard; log in with the `AMBERCLAW_BASIC_AUTH` user/password.
+- `http://project7.me/` → automatically redirects to `https://project7.me/`.
+
+If the certificate does not appear: confirm DNS resolves to `13.127.103.201`, ports 80/443 are
+open, then check `sudo docker compose -f deploy/aws/docker-compose.yml logs caddy`.
+
+Once HTTPS is confirmed you can delete or restrict the port `10000` inbound rule; all normal
+access is through `https://project7.me`.
 
 ---
 

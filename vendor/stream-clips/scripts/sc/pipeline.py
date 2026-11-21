@@ -4,7 +4,7 @@ import datetime
 import hashlib
 
 from . import highlights, listen, media, produce
-from .common import CACHE, DATA, Stopwatch, clock, human, parse_clock, probe, read_json, say, slug, tag, write_json
+from .common import CACHE, DATA, Problem, Stopwatch, clock, human, parse_clock, probe, read_json, say, slug, tag, write_json
 
 
 def work_dir(url):
@@ -51,6 +51,22 @@ def process(url, opts, cfg):
         heard = listen.scan(audio, total, lo, hi, work, cfg, live=live)
         spike_db = listen.spikes(heard["volume"])
         chat = listen.chat_speed(url, args, work, meta, cfg)
+
+    # Reject creators whose main language is not allowed (e.g. a Malayalam creator
+    # who happens to say a few English words). listen.scan already dropped words from
+    # disallowed blocks; this gate rejects the whole stream when the dominant
+    # language is outside the allowed set.
+    langs = heard.get("languages") or {}
+    allowed = [str(x).strip().lower() for x in (cfg.get("allowed_languages") or []) if str(x).strip()]
+    if allowed and not cfg.get("language") and langs:
+        dominant = max(langs, key=langs.get)
+        if dominant not in allowed:
+            raise Problem(f"skipping stream: creator mainly speaks '{dominant}' "
+                          f"(allowed languages: {', '.join(allowed)})")
+        others = [f"{k}={v}" for k, v in langs.items() if k not in allowed]
+        if others:
+            say(f"language filter: kept {dominant} transcript, dropped {', '.join(others)} words",
+                "info")
 
     video = {"title": meta["title"], "name": meta["name"], "url": url,
              "topic": opts.topic or "this video", "focus": opts.focus}

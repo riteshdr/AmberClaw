@@ -117,8 +117,9 @@ cat <<EOF
     Update  : cd $REPO_DIR && git pull && docker compose -f $COMPOSE up -d --build
     Disk    : df -h $DATA_DIR
 
-    Optional HTTPS later:
-      1. Add DOMAIN=your.domain to .env and point a DNS A record at the Elastic IP.
+    HTTPS (Caddy is already enabled in the compose file):
+      1. Point DNS A records for project7.me and www.project7.me at the Elastic IP.
       2. Open TCP 80/443 in the EC2 security group.
-      3. docker compose -f $COMPOSE --profile tls up -d
+      3. docker compose -f $COMPOSE up -d   # Caddy starts automatically
+         Then visit https://project7.me/health to trigger certificate issuance.
 EOF

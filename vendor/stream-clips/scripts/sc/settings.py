@@ -7,6 +7,10 @@ DEFAULTS = {
     "search_suffix": "stream",       # YouTube search = "<topic> <suffix>"; "" for any long video
     "search_when": "today",          # hour | today | week | month
     "max_age_hours": 48,             # watchlist videos older than this are skipped
+    # Only keep creators/videos whose spoken language is one of these ISO codes.
+    # Hinglish is normally detected as "en" or "hi" by Whisper, so both are allowed.
+    # An empty list disables the filter. Override in settings.json if ever needed.
+    "allowed_languages": ["en", "hi"],
 
     # listening
     "scan_model": "tiny",            # Whisper model for the whole stream (fast)

@@ -43,11 +43,10 @@ services:
       retries: 3
       start_period: 60s
 
-  # Optional HTTPS (add later): docker compose -f deploy/aws/docker-compose.yml --profile tls up -d
-  # Needs DOMAIN=... in .env, DNS A record pointing at the Elastic IP, and ports 80/443 open.
+  # HTTPS for project7.me / www.project7.me. Caddy terminates TLS and redirects
+  # HTTP -> HTTPS. Requires DNS A records -> Elastic IP and ports 80/443 open.
   caddy:
     image: caddy:2-alpine
-    profiles: ["tls"]
     restart: unless-stopped
     env_file:
       - ../../.env

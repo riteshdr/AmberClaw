@@ -135,20 +135,16 @@ def _job_problems(jobs):
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, _=Depends(require_auth)):
-    jobs = store.list(200)
+    # The tables load through the JSON APIs so they can poll and paginate.
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "jobs": jobs,
         "defaults": {
             "brain": os.environ.get("STREAMCLIPS_BRAIN", "groq"),
             "auto_upload": os.environ.get("AUTO_UPLOAD", "false").lower() in {"1", "true", "yes", "on"},
             "upload_mode": os.environ.get("UPLOAD_MODE", "queue").strip().lower(),
         },
-        "queue": scheduler.status(),
-        "queue_items": [i for i in upload_queue.list_items(limit=60) if i.get("status") != "removed"],
         "presets": preset_lib.PRESETS,
         "settings": settings_lib.view(),
-        "stats": _job_stats(jobs),
     })
 
 
@@ -197,23 +193,33 @@ def job_detail(job_id: str, request: Request, _=Depends(require_auth)):
 
 
 @app.get("/api/jobs")
-def jobs_json(_=Depends(require_auth)):
-    jobs = store.list(50)
+def jobs_json(limit: int = 10, offset: int = 0, all: bool = False, _=Depends(require_auth)):
+    """Most recently active jobs first. Default top 10; the UI loads more on demand."""
+    jobs = store.list(100000)
+    jobs = sorted(jobs, key=lambda j: str(j.get("updated_at") or j.get("created_at") or ""), reverse=True)
+    total = len(jobs)
+    if not all:
+        limit = max(1, min(limit, 500))
+        offset = max(0, offset)
+        jobs = jobs[offset:offset + limit]
     slim = []
     for j in jobs:
+        result = j.get("result") or {}
+        payload = j.get("payload") or {}
+        log = j.get("log") or []
         slim.append({
-            "id": j["id"],
-            "status": j["status"],
+            "id": j.get("id", ""),
+            "status": j.get("status", ""),
             "updated_at": j.get("updated_at"),
             "created_at": j.get("created_at"),
             "error": j.get("error"),
             "stalled": _is_stalled(j),
-            "progress": (j.get("result") or {}).get("progress") or {},
-            "diagnosis": (j.get("result") or {}).get("last_problem") or "",
-            "topic": (j.get("payload") or {}).get("topic") or (j.get("payload") or {}).get("prompt") or "",
-            "last_log": (j.get("log") or [""])[-1],
+            "progress": result.get("progress") or {},
+            "diagnosis": result.get("last_problem") or "",
+            "topic": payload.get("topic") or payload.get("prompt") or "",
+            "last_log": str(log[-1]) if log else "",
         })
-    return JSONResponse({"jobs": slim})
+    return JSONResponse({"jobs": slim, "total": total, "limit": limit, "offset": offset, "all": all})
 
 
 @app.get("/api/jobs/{job_id}")

@@ -1,4 +1,19 @@
-{$DOMAIN} {
+{
+    email admin@project7.me
+}
+
+# Automatic HTTPS via Let's Encrypt. Caddy redirects plain HTTP on :80 to HTTPS
+# and obtains/renews certificates for both hostnames automatically.
+project7.me, www.project7.me {
     encode zstd gzip
+
+    # Keep the app's own Basic auth (enforced in app.py); Caddy only terminates TLS.
     reverse_proxy amberclaw:10000
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
 }

@@ -68,7 +68,12 @@ def scan(audio, total, lo, hi, work, cfg, live=False):
     # Language is detected per block unless the user set one: streamers switch languages,
     # and locking the first detection onto the whole stream garbles everything after it.
     language = cfg["language"]
+    # Keep only creators/videos speaking an allowed language. Hinglish is detected as
+    # "en" or "hi", so both are allowed by default. When a language is forced via
+    # --language we trust the caller and skip the filter.
+    allowed = [str(x).strip().lower() for x in (cfg.get("allowed_languages") or []) if str(x).strip()]
     words, volume = [], {}
+    lang_counts = {}  # detected language -> number of transcript words (for reporting/gating)
     count = last - first + 1
     say(f"listening to {(hi - lo) / 60:.0f} min of audio ({count} block(s) of "
         f"{cfg['block_minutes']} min)...", "step")
@@ -85,11 +90,23 @@ def scan(audio, total, lo, hi, work, cfg, live=False):
             block = {"length": length, "words": got, "volume": _volume(samples), "language": lang}
             if not (live and length < size):
                 write_json(path, block)
-        words += [w for w in block["words"] if lo <= w["s"] < hi]
+        block_lang = str(block.get("language") or "").lower()
+        block_words = [w for w in block["words"] if lo <= w["s"] < hi]
+        if block_lang:
+            lang_counts[block_lang] = lang_counts.get(block_lang, 0) + len(block_words)
+        if allowed and not language and block_lang and block_lang not in allowed:
+            say(f"  block {b:04d}: language '{block_lang}' is not allowed; skipping its transcript",
+                "warn")
+        else:
+            words += block_words
         for i, db in enumerate(block["volume"]):
             volume[start + i] = db
         say(f"  heard {n}/{count}", "info")
     if not words:
+        if lang_counts and allowed and not language:
+            top = max(lang_counts, key=lang_counts.get)
+            raise Problem(f"creator speaks '{top}', which is not in allowed_languages "
+                          f"({', '.join(allowed)}); skipping this video")
         raise Problem("no speech was found in this part of the stream")
     secs = int(np.ceil(total))
     # seconds outside the scanned part get the typical level, so the edges of a --section
@@ -99,7 +116,7 @@ def scan(audio, total, lo, hi, work, cfg, live=False):
     for t, db in volume.items():
         if t < secs:
             curve[t] = db
-    return {"words": words, "language": language, "volume": curve}
+    return {"words": words, "language": language, "volume": curve, "languages": lang_counts}
 
 
 def spikes(curve, window=180):

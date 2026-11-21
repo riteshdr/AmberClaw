@@ -31,7 +31,7 @@
     .s-needs_attention { background:#4a3a1f; color:#fde68a; }
     .hint { font-size:12px; color:var(--muted); margin-top:4px; }
     .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; background:#64748b; }
-    .dot.run { background:#60a5fa; animation:pulse 1.4s infinite; } .dot.ok { background:#4ade80; } .dot.bad { background:#f87171; } .dot.warn { background:#fbbf24; }
+    .dot.run { background:#60a5fa; animation:pulse 1.4s infinite; } .dot.ok { background:#4ade80; } .dot.bad { background:#f87171; } .dot.warn { background:#fbbf24; } .dot.queue { background:#94a3b8; }
     @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(96,165,250,.6)} 70%{box-shadow:0 0 0 7px rgba(96,165,250,0)} 100%{box-shadow:0 0 0 0 rgba(96,165,250,0)} }
     .stale { color:#fbbf24; font-size:11px; font-weight:600; }
     .small { color:var(--muted); font-size:11px; line-height:1.35; }
@@ -146,11 +146,13 @@
           <button data-f="running">Processing</button>
           <button data-f="succeeded">Done</button>
           <button data-f="failed">Failed</button>
+          <button data-f="needs_attention">Attention</button>
         </div>
         <table>
           <thead><tr><th>Job</th><th>Status</th><th>Topic</th><th>Activity</th></tr></thead>
           <tbody id="jobs-body"><tr><td colspan="4" class="small">Loading…</td></tr></tbody>
         </table>
+        <div id="jobs-more" style="margin-top:8px"></div>
         <div class="hint" id="system-note">System: loading…</div>
       </div>
     </div>
@@ -169,6 +171,7 @@
         <thead><tr><th>Clip</th><th>Topic / creator</th><th>Status</th><th>Uploaded</th><th></th></tr></thead>
         <tbody id="queue-body"><tr><td colspan="5" class="small">Loading…</td></tr></tbody>
       </table>
+      <div id="queue-more" style="margin-top:8px"></div>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -210,10 +213,13 @@
 
   <script>
     const PRESETS = {{ presets | tojson }};
-    function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
     function isoMs(iso){
       if(!iso) return NaN;
-      return new Date(iso.replace(' ', 'T').replace(/Z?$/, 'Z')).getTime();
+      const s = String(iso).trim().replace(' ', 'T');
+      // Keep an explicit timezone (Z or +/-hh:mm); only add UTC when none is present.
+      if(/([zZ]|[+-]\d{2}:?\d{2})$/.test(s)) return new Date(s).getTime();
+      return new Date(s + 'Z').getTime();
     }
     function ago(iso){
       const t = isoMs(iso);
@@ -256,36 +262,68 @@
       document.getElementById('preset-note').textContent = p.description;
     });
 
-    // ----- jobs -----
-    let jobCache = [], currentFilter = 'all';
+    // ----- jobs (top 10 recent, rest behind "Show more") -----
+    const PAGE = 10;
+    let jobCache = [], currentFilter = 'all', jobTotal = 0, jobVisible = PAGE, jobsBusy = false, jobsSig = '';
     document.getElementById('filters').addEventListener('click', e => {
-      if(e.target.tagName !== 'BUTTON') return;
-      currentFilter = e.target.dataset.f;
-      document.querySelectorAll('#filters button').forEach(b => b.classList.toggle('active', b === e.target));
-      renderJobs();
+      const btn = e.target.closest('button');
+      if(!btn || !btn.dataset.f) return;
+      currentFilter = btn.dataset.f;
+      document.querySelectorAll('#filters button').forEach(b => b.classList.toggle('active', b === btn));
+      jobVisible = PAGE; jobsSig = '';
+      refreshJobs();
     });
     function renderJobs(){
       const body = document.getElementById('jobs-body');
-      const jobs = jobCache.filter(j => currentFilter === 'all' || j.status === currentFilter);
-      if(!jobs.length){ body.innerHTML = '<tr><td colspan="4" class="small">No jobs in this view.</td></tr>'; return; }
-      body.innerHTML = jobs.map(j => {
-        const stale = isStale(j);
-        const last = (j.last_log || '').slice(0, 90);
-        const act = `${esc(j.updated_at||'')}<br><span class="small">(${ago(j.updated_at)})</span>${stale ? '<br><span class="stale">⚠ stuck / no heartbeat</span>' : ''}${j.error ? `<br><span class="stale" title="${esc(j.error)}">reason: ${esc((j.error||'').slice(0,90))}</span>` : ''}${last ? `<br><span class="mono small">${esc(last)}</span>` : ''}`;
-        const label = j.status === 'running' ? 'processing' : j.status;
-        return `<tr>
-          <td><a href="/jobs/${esc(j.id)}">${esc(j.id)}</a></td>
-          <td><span class="dot ${dotClass(j)}"></span><span class="pill s-${esc(j.status)}">${esc(label)}</span></td>
-          <td>${esc((j.topic||'-').slice(0,50))}</td>
-          <td class="small">${act}</td>
-        </tr>`;
-      }).join('');
+      const matched = jobCache.filter(j => currentFilter === 'all' || j.status === currentFilter);
+      const available = currentFilter === 'all' ? Math.max(jobTotal, matched.length) : matched.length;
+      const shown = matched.slice(0, jobVisible);
+      const sig = JSON.stringify(shown.map(j => [j.id, j.status, j.updated_at, j.error, j.last_log]));
+      if(sig === jobsSig) return;
+      jobsSig = sig;
+      if(!shown.length){
+        body.innerHTML = '<tr><td colspan="4" class="small">No jobs in this view.</td></tr>';
+      } else {
+        body.innerHTML = shown.map(j => {
+          const stale = isStale(j);
+          const last = String(j.last_log || '').slice(0, 90);
+          const act = `${esc(j.updated_at||'')}<br><span class="small">(${ago(j.updated_at)})</span>${stale ? '<br><span class="stale">⚠ stuck / no heartbeat</span>' : ''}${j.error ? `<br><span class="stale" title="${esc(j.error)}">reason: ${esc(String(j.error).slice(0,90))}</span>` : ''}${last ? `<br><span class="mono small">${esc(last)}</span>` : ''}`;
+          const label = j.status === 'running' ? 'processing' : (j.status === 'needs_attention' ? 'needs attention' : j.status);
+          return `<tr>
+            <td><a href="/jobs/${esc(j.id)}">${esc(j.id)}</a></td>
+            <td><span class="dot ${dotClass(j)}"></span><span class="pill s-${esc(j.status)}">${esc(label)}</span></td>
+            <td>${esc(String(j.topic||'-').slice(0,50))}</td>
+            <td class="small">${act}</td>
+          </tr>`;
+        }).join('');
+      }
+      const more = document.getElementById('jobs-more');
+      if(more){
+        const hidden = Math.max(0, available - shown.length);
+        more.innerHTML = hidden > 0
+          ? `<button class="btn small secondary" id="jobs-more-btn">Show more (${hidden} older)</button>` : '';
+        const btn = document.getElementById('jobs-more-btn');
+        if(btn) btn.onclick = () => { jobVisible += PAGE; jobsSig = ''; refreshJobs(); };
+      }
     }
     async function refreshJobs(){
+      if(jobsBusy) return;
+      jobsBusy = true;
       try{
-        const r = await fetch('/api/jobs', {cache:'no-store'});
-        if(r.ok){ jobCache = (await r.json()).jobs || []; renderJobs(); }
-      }catch(e){}
+        // A status filter (or an expanded list) needs the full set to filter correctly.
+        const url = (currentFilter === 'all' && jobVisible <= PAGE)
+          ? `/api/jobs?limit=${PAGE}` : '/api/jobs?all=true';
+        const r = await fetch(url, {cache:'no-store'});
+        if(r.ok){
+          const d = await r.json();
+          jobCache = d.jobs || [];
+          jobTotal = Number(d.total || jobCache.length);
+          renderJobs();
+        }
+      }catch(e){
+        const note = document.getElementById('system-note');
+        if(note && /loading/i.test(note.textContent)) note.textContent = 'System: reconnecting…';
+      }finally{ jobsBusy = false; }
     }
 
     // ----- live monitor -----
@@ -342,7 +380,10 @@
     }
 
     // ----- dashboard stats -----
+    let dashBusy = false;
     async function refreshDashboard(){
+      if(dashBusy) return;
+      dashBusy = true;
       try{
         const r = await fetch('/api/dashboard', {cache:'no-store'});
         if(!r.ok) return;
@@ -358,7 +399,7 @@
           `System: ${s.ok ? 'online' : 'offline'} • Python ${s.python||'?'} • disk free ${s.disk_free_gb??'?'} GB / ${s.disk_total_gb??'?'} GB`;
         renderMonitor(d);
         renderSettings(d.settings);
-      }catch(e){}
+      }catch(e){}finally{ dashBusy = false; }
     }
 
     // ----- queue -----
@@ -380,49 +421,74 @@
       if(confirm('Add clips from ALL previous jobs to the upload queue? Old clips with imperfect captions may be included.')) postForm('/api/queue/scan', {});
     };
 
+    let queueData = null, queueVisible = PAGE, queueSig = '', queueHeadSig = '', queueBusy = false;
     function renderQueue(data){
+      queueData = data;
       const s = data.status || {}, c = s.counts || {};
       const left = Math.max(0, (s.daily_limit||0) - (s.uploaded_today||0));
-      document.getElementById('queue-summary').innerHTML =
-        `<b>${s.alive ? 'Scheduler running' : 'Scheduler stopped'}</b> ` +
-        `· quota day <span class="mono">${esc(s.quota_day||'')}</span> ` +
-        `· uploaded today <b>${s.uploaded_today||0}/${s.daily_limit||0}</b> ` +
-        `· <b>${left}</b> slot(s) left · resets in <b>${until(s.quota_reset_at)}</b> (Pacific) ` +
-        `· pending <b>${c.pending||0}</b> · uploading <b>${c.uploading||0}</b> ` +
-        `· uploaded <b>${c.uploaded||0}</b> · failed <b>${c.failed||0}</b>` +
-        (s.paused ? ' · <span class="stale">PAUSED</span>' : '') +
-        (s.last_error ? `<br><span class="stale">last tick error: ${esc(s.last_error)}</span>` : '');
-      document.getElementById('queue-logs').innerHTML = (s.logs||[]).slice(0,6).map(x => esc(x)).join('<br>') || 'No scheduler activity yet.';
+      const head = JSON.stringify([s.alive, s.quota_day, s.uploaded_today, s.daily_limit,
+        s.quota_reset_at, c.pending, c.uploading, c.uploaded, c.failed, s.paused, s.last_error, s.logs]);
+      if(head !== queueHeadSig){
+        queueHeadSig = head;
+        document.getElementById('queue-summary').innerHTML =
+          `<b>${s.alive ? 'Scheduler running' : 'Scheduler stopped'}</b> ` +
+          `· quota day <span class="mono">${esc(s.quota_day||'')}</span> ` +
+          `· uploaded today <b>${s.uploaded_today||0}/${s.daily_limit||0}</b> ` +
+          `· <b>${left}</b> slot(s) left · resets in <b>${until(s.quota_reset_at)}</b> (Pacific) ` +
+          `· pending <b>${c.pending||0}</b> · uploading <b>${c.uploading||0}</b> ` +
+          `· uploaded <b>${c.uploaded||0}</b> · failed <b>${c.failed||0}</b>` +
+          (s.paused ? ' · <span class="stale">PAUSED</span>' : '') +
+          (s.last_error ? `<br><span class="stale">last tick error: ${esc(s.last_error)}</span>` : '');
+        document.getElementById('queue-logs').innerHTML = (s.logs||[]).slice(0,6).map(x => esc(x)).join('<br>') || 'No scheduler activity yet.';
+      }
       const body = document.getElementById('queue-body');
       const items = data.items || [];
-      if(!items.length){ body.innerHTML = '<tr><td colspan="5" class="small">Queue is empty. Generate clips or click “Scan old clips”.</td></tr>'; return; }
-      body.innerHTML = items.slice(0,40).map(i => {
-        const st = i.status || 'pending';
-        const pill = st==='uploaded' ? 's-uploaded' : st==='failed' ? 's-failed' : st==='uploading' ? 's-uploading' : 's-queued';
-        const link = i.url ? `<a href="${esc(i.url)}" target="_blank">watch</a>` : '';
-        const err = i.error ? `<br><span class="stale" title="${esc(i.error)}">${esc(i.error.slice(0,110))}</span>` : '';
-        const viewPath = encodeURIComponent((i.outdir||'') + '/' + (i.file||''));
-        const viewTitle = encodeURIComponent(i.meta_title || i.title || i.file || 'Clip');
-        const view = `<a class="btn small" style="display:inline-block;text-decoration:none" ` +
-          `href="/view?path=${viewPath}&title=${viewTitle}" target="_blank">view</a> `;
-        const action = view + (st==='failed'
-          ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/retry',{})">retry</button> `
-          : st==='pending'
-          ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/remove',{})">remove</button> ` : '');
-        return `<tr>
-          <td class="small mono">${esc(i.file)}<br><span class="small">${esc((i.meta_title||'').slice(0,44))}</span></td>
-          <td class="small">${esc((i.topic||'') + ' / ' + (i.creator||''))}</td>
-          <td><span class="pill ${pill}">${esc(st)}</span>${err}</td>
-          <td class="small">${esc((i.uploaded_at||i.updated_at||'').slice(0,16))} ${link}</td>
-          <td>${action}</td>
-        </tr>`;
-      }).join('');
+      const shown = items.slice(0, queueVisible);
+      const sig = JSON.stringify(shown.map(i => [i.id, i.file, i.status, i.error,
+        i.uploaded_at, i.updated_at, i.url, i.title, i.creator, i.topic]));
+      if(sig !== queueSig){
+        queueSig = sig;
+        if(!shown.length){
+          body.innerHTML = '<tr><td colspan="5" class="small">Queue is empty. Generate clips or click “Scan old clips”.</td></tr>';
+        } else {
+          body.innerHTML = shown.map(i => {
+            const st = i.status || 'pending';
+            const pill = st==='uploaded' ? 's-uploaded' : st==='failed' ? 's-failed' : st==='uploading' ? 's-uploading' : 's-queued';
+            const link = i.url ? `<a href="${esc(i.url)}" target="_blank">watch</a>` : '';
+            const errText = String(i.error || '');
+            const err = errText ? `<br><span class="stale" title="${esc(errText)}">${esc(errText.slice(0,110))}</span>` : '';
+            const viewPath = encodeURIComponent((i.outdir||'') + '/' + (i.file||''));
+            const viewTitle = encodeURIComponent(i.title || i.file || 'Clip');
+            const view = `<a class="btn small" style="display:inline-block;text-decoration:none" ` +
+              `href="/view?path=${viewPath}&title=${viewTitle}" target="_blank">view</a> `;
+            const action = view + (st==='failed'
+              ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/retry',{})">retry</button> `
+              : st==='pending'
+              ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/remove',{})">remove</button> ` : '');
+            return `<tr>
+              <td class="small mono">${esc(i.file)}<br><span class="small">${esc(String(i.title||'').slice(0,44))}</span></td>
+              <td class="small">${esc((i.topic||'') + ' / ' + (i.creator||''))}</td>
+              <td><span class="pill ${pill}">${esc(st)}</span>${err}</td>
+              <td class="small">${esc(String(i.uploaded_at||i.updated_at||'').slice(0,16))} ${link}</td>
+              <td>${action}</td>
+            </tr>`;
+          }).join('');
+        }
+      }
+      const more = document.getElementById('queue-more');
+      const hidden = Math.max(0, items.length - shown.length);
+      more.innerHTML = hidden > 0
+        ? `<button class="btn small secondary" id="queue-more-btn">Show more (${hidden} older)</button>` : '';
+      const btn = document.getElementById('queue-more-btn');
+      if(btn) btn.onclick = () => { queueVisible += PAGE; queueSig = ''; if(queueData) renderQueue(queueData); };
     }
     async function refreshQueue(){
+      if(queueBusy) return;
+      queueBusy = true;
       try{
         const r = await fetch('/api/queue', {cache:'no-store'});
         if(r.ok) renderQueue(await r.json());
-      }catch(e){}
+      }catch(e){}finally{ queueBusy = false; }
     }
 
     // ----- settings / secrets -----
@@ -461,9 +527,11 @@
     };
 
     refreshJobs(); refreshQueue(); refreshDashboard();
-    setInterval(refreshJobs, 4000);
-    setInterval(refreshQueue, 8000);
-    setInterval(refreshDashboard, 8000);
+    // Pause polling while the tab is hidden; guards above prevent overlapping requests.
+    function pollEvery(fn, ms){ setInterval(() => { if(!document.hidden) fn(); }, ms); }
+    pollEvery(refreshJobs, 5000);
+    pollEvery(refreshQueue, 8000);
+    pollEvery(refreshDashboard, 8000);
   </script>
 </body>
 </html>
