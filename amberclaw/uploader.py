@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from pathlib import Path
 
 from . import metadata as meta
@@ -131,8 +132,15 @@ def upload_video(video_path: str | Path, *, title: str, description: str, tags: 
     }
     media = MediaFileUpload(str(video_path), chunksize=-1, resumable=True, mimetype="video/mp4")
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+    try:
+        timeout = max(60, int(os.environ.get("YOUTUBE_UPLOAD_TIMEOUT_SECONDS", "1800")))
+    except (TypeError, ValueError):
+        timeout = 1800
+    deadline = time.monotonic() + timeout
     response = None
     while response is None:
+        if time.monotonic() > deadline:
+            raise UploadError(f"Upload exceeded {timeout}s timeout")
         status, response = request.next_chunk()
         # status progress could be surfaced; caller handles final response
     return response

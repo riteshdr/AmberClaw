@@ -13,7 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # ffmpeg/ffprobe for media, deno for yt-dlp's YouTube JS challenges.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg curl ca-certificates unzip git \
+    ffmpeg curl ca-certificates unzip git tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://deno.land/install.sh | sh

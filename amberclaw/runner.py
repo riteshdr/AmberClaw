@@ -182,6 +182,17 @@ def _failure_details(lines):
 
 
 def run_job(store: JobStore, job_id: str, queue=None):
+    """Run a job, guaranteeing an unexpected crash never leaves it stuck 'running'."""
+    try:
+        return _run_job_impl(store, job_id, queue)
+    except Exception as e:  # noqa: BLE001
+        try:
+            store.update(job_id, status="failed", error=f"Job crashed: {e}")
+        except Exception:
+            pass
+
+
+def _run_job_impl(store: JobStore, job_id: str, queue=None):
     job = store.get(job_id)
     if not job:
         return
@@ -228,10 +239,12 @@ def run_job(store: JobStore, job_id: str, queue=None):
         store.update(job_id, status="needs_attention", result=result,
                      error="stream-clips is waiting for agent answers (brain=agent). Use brain=groq or a configured CLI brain for automated runs.")
         return
-    if code != 0 and not has_clips:
+    if not has_clips:
+        # stream-clips can exit 0 even when every stream was filtered or every
+        # clip encode failed. Never report that as a successful job.
         detail = result["last_problem"]
         store.update(job_id, status="failed", result=result,
-                     error=f"stream-clips exited with code {code} and produced no clips. Reason: {detail}")
+                     error=f"stream-clips produced no clips (exit {code}). Reason: {detail}")
         return
 
     uploads = []

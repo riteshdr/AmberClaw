@@ -406,14 +406,17 @@
     async function postForm(url, data){
       const fd = new FormData();
       Object.entries(data).forEach(([k,v]) => fd.append(k, v));
+      let ok = false;
       try{
         const r = await fetch(url, {method:'POST', body:fd, cache:'no-store'});
-        if(!r.ok) alert('Request failed: ' + r.status);
+        ok = r.ok;
+        if(!ok) alert('Request failed: ' + r.status);
       }catch(e){ alert('Request failed: ' + e); }
-      refreshQueue(); refreshDashboard();
+      if(ok){ refreshQueue(); refreshDashboard(); }
+      return ok;
     }
     document.getElementById('btn-run').onclick = () => {
-      if(confirm('Upload a batch now? This uses YouTube quota (up to the daily limit).')) postForm('/api/queue/run', {});
+      if(confirm('Upload a batch now? This uses YouTube quota (up to the daily limit).')) postForm('/api/queue/run?force=true', {});
     };
     document.getElementById('btn-pause').onclick = () => postForm('/api/queue/pause', {});
     document.getElementById('btn-resume').onclick = () => postForm('/api/queue/resume', {});

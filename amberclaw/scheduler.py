@@ -63,7 +63,8 @@ class UploadScheduler:
             return True
         except FileExistsError:
             try:
-                if time.time() - self.lock_path.stat().st_mtime > 7200:
+                # 24h: a slow resumable batch must never look "stale" mid-upload.
+                if time.time() - self.lock_path.stat().st_mtime > 86400:
                     self.lock_path.unlink(missing_ok=True)
                     return self._acquire_lock()
             except Exception:
@@ -71,6 +72,13 @@ class UploadScheduler:
             return False
         except Exception:
             return False
+
+    def _touch_lock(self):
+        """Heartbeat so a long-running batch is never considered stale."""
+        try:
+            os.utime(self.lock_path, None)
+        except Exception:
+            pass
 
     def _release_lock(self):
         try:
@@ -84,11 +92,16 @@ class UploadScheduler:
         if self._thread and self._thread.is_alive():
             return self._thread
         self._stop.clear()
-        interval = max(1, int(os.environ.get("UPLOAD_TICK_MINUTES", "10"))) * 60
 
         def loop():
             while not self._stop.is_set():
-                self._stop.wait(interval)
+                # Read the interval each cycle so UI control changes apply
+                # without a container restart.
+                try:
+                    minutes = max(1, int(os.environ.get("UPLOAD_TICK_MINUTES", "10")))
+                except (TypeError, ValueError):
+                    minutes = 10
+                self._stop.wait(minutes * 60)
                 if self._stop.is_set():
                     break
                 try:
@@ -98,7 +111,7 @@ class UploadScheduler:
 
         self._thread = threading.Thread(target=loop, name="upload-scheduler", daemon=True)
         self._thread.start()
-        self._log(f"[scheduler] started (every {interval // 60} min)")
+        self._log("[scheduler] started")
         return self._thread
 
     def stop(self):
@@ -109,7 +122,7 @@ class UploadScheduler:
 
     def status(self):
         st = self.queue.state()
-        limit = max(0, int(os.environ.get("YOUTUBE_DAILY_UPLOAD_LIMIT", "6")))
+        limit = max(0, int(os.environ.get("YOUTUBE_DAILY_UPLOAD_LIMIT", "20")))
         used = int(st.get("uploaded") or 0)
         counts = self.queue.counts()
         failed = self.queue.list_items(status="failed", limit=8)
@@ -158,7 +171,7 @@ class UploadScheduler:
                 result["reason"] = "paused"
                 return result
 
-            limit = max(0, int(os.environ.get("YOUTUBE_DAILY_UPLOAD_LIMIT", "6")))
+            limit = max(0, int(os.environ.get("YOUTUBE_DAILY_UPLOAD_LIMIT", "20")))
             remaining = limit - self.queue.uploaded_today()
             if remaining <= 0:
                 self.queue.touch_tick()
@@ -183,6 +196,11 @@ class UploadScheduler:
 
             self._log(f"[scheduler] processing {len(items)} clip(s) (dry_run={dry_run})")
             for it in items:
+                if self.queue.is_cancel_requested(it["id"]):
+                    self.queue.finish(it["id"])  # honours cancel flag -> removed
+                    self._log(f"[scheduler] skipped {it.get('file')}: removed by user")
+                    result["skipped"] += 1
+                    continue
                 vpath = Path(it["outdir"]) / it["file"]
                 try:
                     if not vpath.exists():
@@ -214,6 +232,7 @@ class UploadScheduler:
                         result["skipped"] += 1
                         continue
 
+                    self._touch_lock()  # heartbeat for long resumable uploads
                     resp = upload_video(
                         vpath, title=title, description=desc, tags=tags,
                         privacy=privacy, category_id=category,

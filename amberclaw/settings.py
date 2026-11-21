@@ -101,7 +101,7 @@ def view():
         return str(os.environ.get(key) or raw.get(key) or default)
     return {
         "groq": groq_keys(),
-        "daily_limit": get("YOUTUBE_DAILY_UPLOAD_LIMIT", "6"),
+        "daily_limit": get("YOUTUBE_DAILY_UPLOAD_LIMIT", "20"),
         "tick_minutes": get("UPLOAD_TICK_MINUTES", "10"),
         "dry_run": get("UPLOAD_DRY_RUN", "false").strip().lower() in {"1", "true", "yes", "on"},
         "privacy": get("YOUTUBE_PRIVACY", "private"),

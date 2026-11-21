@@ -1,3 +1,4 @@
+import calendar
 import os
 import platform
 import secrets
@@ -51,13 +52,13 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 def _reconcile_on_startup():
     try:
         store.reconcile_interrupted()
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        scheduler._log(f"[startup] reconcile failed: {e}")
     if os.environ.get("UPLOAD_SCHEDULER_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
         try:
             scheduler.start()
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001
+            scheduler._log(f"[startup] scheduler failed to start: {e}")
 
 
 def require_auth(credentials: Optional[HTTPBasicCredentials] = Depends(security)):
@@ -67,14 +68,19 @@ def require_auth(credentials: Optional[HTTPBasicCredentials] = Depends(security)
     if not credentials:
         raise HTTPException(status_code=401, detail="Auth required", headers={"WWW-Authenticate": "Basic"})
     allowed = [tuple(x.split(":", 1)) for x in cfg.split(",") if ":" in x]
+    supplied_u = credentials.username.encode("utf-8")
+    supplied_p = credentials.password.encode("utf-8")
     for user, pwd in allowed:
-        if secrets.compare_digest(credentials.username, user) and secrets.compare_digest(credentials.password, pwd):
+        if secrets.compare_digest(supplied_u, user.encode("utf-8")) and secrets.compare_digest(supplied_p, pwd.encode("utf-8")):
             return True
     raise HTTPException(status_code=401, detail="Invalid credentials", headers={"WWW-Authenticate": "Basic"})
 
 
 def _safe_data_path(p: str | Path) -> Path:
-    target = Path(p).resolve()
+    try:
+        target = Path(p).resolve()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Invalid path")
     if DATA_DIR in target.parents or target == DATA_DIR:
         return target
     raise HTTPException(status_code=403, detail="Access outside data directory is not allowed")
@@ -84,10 +90,20 @@ def _age_seconds(iso):
     if not iso:
         return None
     try:
-        t = time.mktime(time.strptime(str(iso), "%Y-%m-%dT%H:%M:%SZ"))
+        t = calendar.timegm(time.strptime(str(iso), "%Y-%m-%dT%H:%M:%SZ"))
         return max(0, int(time.time() - t))
     except Exception:  # noqa: BLE001
         return None
+
+
+def _form_int(value, name: str, default: int, low: int, high: int) -> int:
+    if value is None or str(value).strip() == "":
+        return default
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{name} must be a whole number")
+    return max(low, min(parsed, high))
 
 
 _STALL_SECONDS = {"running": 20 * 60, "queued": 5 * 60}
@@ -171,14 +187,18 @@ def create_job(
         "urls": (urls or "").strip(),
         "focus": (focus or "").strip() or (prompt or "").strip(),
         "find": bool(find) or not (urls or "").strip(),
-        "count": int(count or 5),
-        "clips": int(clips or 3),
+        "count": _form_int(count, "count", 5, 1, 100),
+        "clips": _form_int(clips, "clips", 3, 1, 100),
         "when": (when or "today").strip(),
         "brain": (brain or os.environ.get("STREAMCLIPS_BRAIN", "groq")).strip(),
         "language": (language or "").strip() or None,
         "extra_args": (extra_args or "").strip(),
         "auto_upload": bool(auto_upload),
     }
+    active = [j for j in store.list(1000)
+              if j.get("status") in {"queued", "running"} and not _is_stalled(j)]
+    if len(active) >= 2:
+        raise HTTPException(status_code=429, detail="Two jobs are already running; wait for one to finish (Whisper models use ~1 GB each).")
     job = store.create(payload)
     start_job_async(store, job["id"], upload_queue)
     return RedirectResponse(url=f"/jobs/{job['id']}", status_code=303)
@@ -239,6 +259,8 @@ def upload_job(job_id: str, outdir: str = Form(""), _=Depends(require_auth)):
     outdirs = [outdir] if outdir else (result.get("outdirs") or [])
     if not outdirs:
         raise HTTPException(status_code=400, detail="No output directories found for this job")
+    for od in outdirs:
+        _safe_data_path(od)  # 400/403 if outside DATA_DIR or otherwise invalid
     privacy = os.environ.get("YOUTUBE_PRIVACY", "private")
     category = os.environ.get("YOUTUBE_CATEGORY_ID", "20")
     client_secrets = os.environ.get("YOUTUBE_CLIENT_SECRETS", "client_secrets.json")
@@ -335,6 +357,7 @@ def queue_resume(_=Depends(require_auth)):
 def queue_scan(_=Depends(require_auth)):
     """Enqueue clips from every existing job output (for clips generated before queuing existed)."""
     added = 0
+    errors = 0
     for job in store.list(500):
         result = job.get("result") or {}
         for od in result.get("outdirs") or []:
@@ -343,10 +366,11 @@ def queue_scan(_=Depends(require_auth)):
                     outdir=od, job_id=job.get("id", ""),
                     topic=(job.get("payload") or {}).get("topic") or "",
                 ))
-            except Exception:
-                pass
-    scheduler._log(f"[queue] scan complete; {added} new clip(s) queued")
-    return JSONResponse({"added": added, "counts": upload_queue.counts()})
+            except Exception as e:  # noqa: BLE001
+                errors += 1
+                scheduler._log(f"[queue] scan skipped {od}: {e}")
+    scheduler._log(f"[queue] scan complete; {added} new clip(s) queued, {errors} skipped")
+    return JSONResponse({"added": added, "errors": errors, "counts": upload_queue.counts()})
 
 
 @app.post("/api/queue/item/{item_id}/retry")
@@ -428,9 +452,9 @@ def update_controls(
 ):
     kwargs = {}
     if daily_limit is not None:
-        kwargs["daily_limit"] = int(daily_limit or 6)
+        kwargs["daily_limit"] = _form_int(daily_limit, "daily_limit", 20, 0, 1000)
     if tick_minutes is not None:
-        kwargs["tick_minutes"] = int(tick_minutes or 10)
+        kwargs["tick_minutes"] = _form_int(tick_minutes, "tick_minutes", 10, 1, 1440)
     if dry_run is not None:
         kwargs["dry_run"] = str(dry_run).strip().lower() in {"1", "true", "yes", "on"}
     if privacy is not None:

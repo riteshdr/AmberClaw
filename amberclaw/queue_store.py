@@ -1,3 +1,4 @@
+import calendar
 import json
 import os
 import threading
@@ -203,19 +204,26 @@ class UploadQueue:
         status = "uploaded" if video_id and not error else "failed"
         def fn(d):
             for it in d.get("items", []):
-                if it.get("id") == item_id:
-                    it["status"] = status
-                    it["updated_at"] = _now()
-                    it["video_id"] = video_id
-                    it["url"] = f"https://youtu.be/{video_id}" if video_id else None
-                    it["uploaded_at"] = _now() if status == "uploaded" else None
-                    it["error"] = str(error) if error else None
-                    if status == "uploaded":
-                        st = d.setdefault("state", {})
-                        if st.get("day") != self.quota_day():
-                            st.update({"day": self.quota_day(), "uploaded": 0})
-                        st["uploaded"] = int(st.get("uploaded") or 0) + 1
-                    return it
+                if it.get("id") != item_id:
+                    continue
+                previous = it.get("status")
+                # A removal requested mid-upload wins for visibility, but a
+                # video that really went live must still consume quota.
+                if it.get("cancel_requested"):
+                    status = "removed"
+                it["status"] = status
+                it["updated_at"] = _now()
+                it["video_id"] = video_id
+                it["url"] = f"https://youtu.be/{video_id}" if video_id else None
+                it["uploaded_at"] = _now() if video_id else None
+                it["error"] = str(error) if error else None
+                it.pop("cancel_requested", None)
+                if video_id and previous != "uploaded":
+                    st = d.setdefault("state", {})
+                    if st.get("day") != self.quota_day():
+                        st.update({"day": self.quota_day(), "uploaded": 0})
+                    st["uploaded"] = int(st.get("uploaded") or 0) + 1
+                return it
             return None
         return self._mutate(fn)
 
@@ -228,7 +236,7 @@ class UploadQueue:
                 if it.get("status") != "uploading":
                     continue
                 try:
-                    t = time.mktime(time.strptime(it.get("updated_at"), "%Y-%m-%dT%H:%M:%SZ"))
+                    t = calendar.timegm(time.strptime(it.get("updated_at"), "%Y-%m-%dT%H:%M:%SZ"))
                 except Exception:
                     t = 0
                 if now - t > max_age_seconds:
@@ -251,22 +259,47 @@ class UploadQueue:
         return self._mutate(fn)
 
     def retry(self, item_id):
+        """Requeue a failed/removed item. Never silently re-uploads a live video."""
         def fn(d):
             for it in d.get("items", []):
-                if it.get("id") == item_id:
-                    it["status"] = "pending"
-                    it["updated_at"] = _now()
-                    it["error"] = None
-                    return it
+                if it.get("id") != item_id:
+                    continue
+                if it.get("status") not in {"failed", "removed"}:
+                    return None
+                # If a previously uploaded item was removed, undo its quota charge.
+                if it.get("video_id") and it.get("uploaded_at"):
+                    st = d.setdefault("state", {})
+                    if st.get("day") == str(it["uploaded_at"])[:10]:
+                        st["uploaded"] = max(0, int(st.get("uploaded") or 0) - 1)
+                it["status"] = "pending"
+                it["updated_at"] = _now()
+                it["video_id"] = None
+                it["url"] = None
+                it["uploaded_at"] = None
+                it["error"] = None
+                it.pop("cancel_requested", None)
+                return it
             return None
         return self._mutate(fn)
+
+    def is_cancel_requested(self, item_id):
+        with _lock:
+            for it in self._read().get("items", []):
+                if it.get("id") == item_id:
+                    return bool(it.get("cancel_requested"))
+        return False
 
     def remove(self, item_id):
         """Hide an item without letting a re-scan add it back."""
         def fn(d):
             for it in d.get("items", []):
                 if it.get("id") == item_id:
-                    it["status"] = "removed"
+                    if it.get("status") == "uploading":
+                        # The scheduler holds a local copy; flag the cancellation
+                        # so finish() won't resurrect it as uploaded.
+                        it["cancel_requested"] = True
+                    else:
+                        it["status"] = "removed"
                     it["updated_at"] = _now()
                     return it
             return None

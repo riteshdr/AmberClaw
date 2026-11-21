@@ -74,8 +74,9 @@ docker compose version
 echo "==> Preparing persistent data directory"
 mkdir -p "$DATA_DIR"
 
-# --- replace placeholder Basic auth password if the example value is present ---
-if grep -q 'replace-with-a-strong-password' "$ENV_FILE"; then
+# --- ensure Basic auth is never left empty on a fresh deploy ---
+current_auth="$(grep '^AMBERCLAW_BASIC_AUTH=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\r')"
+if [ -z "$current_auth" ] || echo "$current_auth" | grep -q 'replace-with-a-strong-password'; then
   ui_pass="$(openssl rand -base64 18 | tr -d '/+=')"
   python3 - "$ENV_FILE" "$ui_pass" <<'PY'
 import sys
