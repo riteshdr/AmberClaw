@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import metadata as meta
 from .queue_store import UploadQueue
 from .uploader import UploadError, build_upload_fields, upload_video
 
@@ -158,13 +159,24 @@ class UploadScheduler:
                 try:
                     if not vpath.exists():
                         raise UploadError(f"Video not found: {vpath}")
+                    hinglish_title = it.get("meta_title") or ""
+                    hinglish_desc = it.get("meta_description") or ""
+                    if not hinglish_title or not hinglish_desc:
+                        hinglish_title, hinglish_desc = meta.generate(
+                            caption=it.get("caption") or "",
+                            source_title=it.get("source_title") or "",
+                            creator=it.get("creator") or "",
+                            topic=it.get("topic") or it.get("title") or "",
+                        )
+                        self.queue.set_metadata(
+                            it["id"], title=hinglish_title, description=hinglish_desc)
                     title, desc, tags = build_upload_fields(
-                        caption=it.get("caption") or "",
+                        caption=hinglish_desc,
                         hashtags=it.get("hashtags") or [],
                         creator=it.get("creator") or "Unknown creator",
                         source_title=it.get("source_title") or "",
                         source_url=it.get("source_url") or "",
-                        title=it.get("title") or "",
+                        title=hinglish_title,
                         default_tags=default_tags,
                         description_template=desc_tmpl,
                     )

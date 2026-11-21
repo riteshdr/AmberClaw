@@ -86,11 +86,26 @@ def build_command(payload: dict):
     return cmd, env_with_brain(_env(), brain, payload)
 
 
+_key_counters = {"GROQ": 0, "OPENAI": 0}
+_key_counter_lock = threading.Lock()
+
+
+def _pick_api_key(raw, prefix):
+    """Round-robin across several free keys supplied comma/newline separated in .env."""
+    keys = [k.strip() for k in re.split(r"[\s,]+", str(raw or "")) if k.strip()]
+    if not keys:
+        return None
+    with _key_counter_lock:
+        i = _key_counters[prefix] % len(keys)
+        _key_counters[prefix] += 1
+    return keys[i]
+
+
 def env_with_brain(env, brain, payload):
     if brain in ("openai", "groq"):
         prefix = "GROQ" if brain == "groq" else "OPENAI"
         # allow per-job override, else fall back to env/.env already loaded
-        key = payload.get(f"{brain}_api_key") or os.environ.get(f"{prefix}_API_KEY")
+        key = payload.get(f"{brain}_api_key") or _pick_api_key(os.environ.get(f"{prefix}_API_KEY"), prefix)
         if key:
             env[f"{prefix}_API_KEY"] = str(key)
         base = payload.get(f"{brain}_base_url") or os.environ.get(f"{prefix}_BASE_URL")

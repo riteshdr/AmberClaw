@@ -34,7 +34,7 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 - Disk space and CPU/RAM for downloads + Whisper transcription + rendering (a few GB recommended; long streams take time)
 
 **For moment picking on a server (headless):**
-- A free `GROQ_API_KEY` (https://console.groq.com/keys) is the default. Groq serves open-weight GPT-OSS models (`openai/gpt-oss-20b` by default) through an OpenAI-compatible API, with a free tier that is fast enough for clip picking. Override with `GROQ_MODEL` if needed.
+- A free `GROQ_API_KEY` (https://console.groq.com/keys) is the default. Groq serves open-weight GPT-OSS models (`openai/gpt-oss-20b` by default) through an OpenAI-compatible API, with a free tier that is fast enough for clip picking. Override with `GROQ_MODEL` if needed. Several free keys can be supplied comma-separated (`GROQ_API_KEY=key1,key2,key3`); AmberClaw round-robins across them for both clip picking and Hinglish metadata, which helps when generating 100 clips.
 - Optional paid fallback: `OPENAI_API_KEY` (and `OPENAI_BASE_URL`, `OPENAI_MODEL`) with `STREAMCLIPS_BRAIN=openai`. Any OpenAI-compatible chat API following the Chat Completions format also works.
 - Alternatively, local agent CLIs (`claude`, `codex`, `gemini`, `opencode`) if installed/logged in (usually local machines, not Render).
 
@@ -125,6 +125,13 @@ Captions use Whisper `small` with a Hinglish prompt and a Devanagari→Roman fal
 Output is always **1080x1920 at up to 60 fps**. The source is downloaded at up to 4K (`video_height: 2160`) and downscaled with Lanczos, then encoded with `crf: 18` / `x264_preset: "medium"`. On a slower CPU, set `x264_preset: "fast"` or `video_height: 1080` in settings.json — the canvas stays 1080p either way.
 
 ## YouTube upload & credit
+
+### Hinglish titles, descriptions and GTA6 tags (every short)
+
+- For **each** clip, `amberclaw/metadata.py` asks the free Groq GPT-OSS model for a fresh **Roman Hinglish** title (with emoji) and a 2–3 line Roman Hinglish hype description based on the Whisper caption. If Groq is unavailable, a deterministic Hinglish fallback is used so uploads never stall. Generated metadata is cached on the queue item, so retries don't regenerate it.
+- `{caption}` in `YOUTUBE_DESCRIPTION_TEMPLATE` receives that Hinglish hype text; the template then appends hashtags, creator credit and the source URL.
+- **Every upload gets at least 15 GTA6 tags** (hard-coded in `amberclaw/uploader.py`, e.g. `gta6`, `gta 6`, `grand theft auto 6`, `gta vi`, `gta6 shorts`, `gta6 funny`, `gta6 hindi`, `gta6 hinglish`, …), followed by clip hashtags, `YOUTUBE_TAGS_DEFAULT` and the creator name. Tags are de-duplicated, capped at 30 characters each and 500 characters total, so the 15 GTA6 tags always survive. Set `YOUTUBE_MIN_TAGS` higher to require more.
+- Groq needs a real User-Agent and a large token budget for gpt-oss reasoning; both are handled in `metadata.py`. Set `YOUTUBE_META_DEBUG=true` to log any fallback reason.
 
 - The uploader builds a title/description from `clips.json` metadata and includes source creator/title/URL plus the generated caption/hashtags using `YOUTUBE_DESCRIPTION_TEMPLATE`.
 - Default privacy is `private` (`YOUTUBE_PRIVACY`). Change to `unlisted`/`public` only when ready.

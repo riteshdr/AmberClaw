@@ -2,7 +2,20 @@ import json
 import os
 from pathlib import Path
 
+from . import metadata as meta
+
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube"]
+
+# Guaranteed GTA 6 trending tag set. Every short gets at least these 15 tags,
+# regardless of what the source clip or .env happens to contain.
+GTA6_TAGS = [
+    "gta6", "gta 6", "grand theft auto 6", "gta vi", "grand theft auto vi",
+    "gta6 gameplay", "gta 6 gameplay", "gta6 shorts", "gta 6 shorts",
+    "gta6 funny", "gta 6 funny", "gta6 moments", "gta 6 moments",
+    "gta6 hindi", "gta6 hinglish",
+]
+MIN_TAGS = 15
+MAX_TAG_CHARS = 500  # YouTube's total tags length limit
 
 
 class UploadError(RuntimeError):
@@ -39,6 +52,8 @@ def _build_service(client_secrets: str, token_file: str):
 
 
 def render_description(template: str, *, creator: str, title: str, url: str, caption: str, hashtags: str):
+    # python-dotenv keeps \n literal in unquoted .env values; turn it into real newlines.
+    template = (template or "").replace("\\n", "\n")
     values = {
         "creator": creator or "Unknown creator",
         "title": title or "",
@@ -57,9 +72,31 @@ def build_upload_fields(*, caption: str, hashtags: list[str], creator: str,
                         default_tags: list[str], description_template: str):
     """Build the YouTube title/description/tags shared by immediate and scheduled uploads."""
     creator = creator or "Unknown creator"
-    tags = list(dict.fromkeys(
-        [t.lstrip('#') for t in (hashtags or [])] + list(default_tags or []) + [creator]
-    ))
+    # Order matters: the 15 GTA6 tags always come first so the minimum survives
+    # YouTube's 500-character total limit even with long creator/hashtag names.
+    raw_tags = (
+        GTA6_TAGS
+        + [t.lstrip('#').strip() for t in (hashtags or [])]
+        + [t.lstrip('#').strip() for t in (default_tags or [])]
+        + [creator]
+    )
+    tags = []
+    used = 0
+    for t in raw_tags:
+        t = str(t).strip().lstrip('#')
+        if not t or len(t) > 30 or t.lower() in {x.lower() for x in tags}:
+            continue
+        extra = len(t) + (1 if tags else 0)
+        if used + extra > MAX_TAG_CHARS:
+            continue
+        tags.append(t)
+        used += extra
+    try:
+        min_tags = max(MIN_TAGS, int(os.environ.get("YOUTUBE_MIN_TAGS", MIN_TAGS)))
+    except Exception:
+        min_tags = MIN_TAGS
+    if len(tags) < min_tags:
+        raise UploadError(f"Only {len(tags)} tags built; need at least {min_tags} GTA6 tags")
     desc = render_description(
         description_template, creator=creator, title=source_title or title or "",
         url=source_url or "", caption=caption or "",
@@ -68,7 +105,7 @@ def build_upload_fields(*, caption: str, hashtags: list[str], creator: str,
     full_title = f"{title} | {creator}"
     if len(full_title) > 100:
         full_title = title
-    return full_title[:100], desc[:4900], tags[:30]
+    return full_title[:100], desc[:4900], tags
 
 
 def upload_video(video_path: str | Path, *, title: str, description: str, tags: list[str],
@@ -84,7 +121,7 @@ def upload_video(video_path: str | Path, *, title: str, description: str, tags: 
         "snippet": {
             "title": (title or video_path.stem)[:100],
             "description": (description or "")[:4900],
-            "tags": tags[:30],
+            "tags": tags[:60],
             "categoryId": str(category_id or "20"),
         },
         "status": {
@@ -118,14 +155,17 @@ def upload_clips_from_dir(outdir: str | Path, *, privacy: str, category_id: str,
         vpath = outdir / c.get("file", "")
         caption = c.get("caption") or ""
         hashtags = c.get("hashtags") or []
-        title = c.get("title") or caption or src_title or vpath.stem
+        hinglish_title, hinglish_desc = meta.generate(
+            caption=caption, source_title=src_title, creator=creator,
+            topic=c.get("title") or src_title or "",
+        )
         full_title, desc, tags = build_upload_fields(
-            caption=caption, hashtags=hashtags, creator=creator,
-            source_title=src_title, source_url=src_url, title=title,
+            caption=hinglish_desc, hashtags=hashtags, creator=creator,
+            source_title=src_title, source_url=src_url, title=hinglish_title,
             default_tags=default_tags, description_template=description_template,
         )
         if on_progress:
-            on_progress(f"Uploading {vpath.name} ...")
+            on_progress(f"Uploading {vpath.name} -> {full_title}")
         resp = upload_video(vpath, title=full_title, description=desc, tags=tags,
                             privacy=privacy, category_id=category_id,
                             client_secrets=client_secrets, token_file=token_file)

@@ -230,6 +230,18 @@ class UploadQueue:
             return n
         return self._mutate(fn)
 
+    def set_metadata(self, item_id, *, title, description):
+        """Cache generated Hinglish metadata so retries don't regenerate it."""
+        def fn(d):
+            for it in d.get("items", []):
+                if it.get("id") == item_id:
+                    it["meta_title"] = title
+                    it["meta_description"] = description
+                    it["updated_at"] = _now()
+                    return it
+            return None
+        return self._mutate(fn)
+
     def retry(self, item_id):
         def fn(d):
             for it in d.get("items", []):
