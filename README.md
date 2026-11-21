@@ -92,7 +92,9 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 
 ### Daily upload queue (20/day default)
 
-YouTube's current Data API quota gives each project a dedicated bucket of **100 `videos.insert` calls/day** (1 unit each) alongside 10,000 units for other endpoints. AmberClaw defaults to a conservative **20 uploads per quota day** (midnight Pacific Time reset); you can raise it further if your channel is phone-verified and your Cloud project has quota. AmberClaw decouples generation from uploading:
+YouTube's current Data API quota gives each project a dedicated bucket of **100 `videos.insert` calls/day** (1 unit each) alongside 10,000 units for other endpoints. AmberClaw defaults to a conservative **20 uploads per quota day** (midnight Pacific Time reset); you can raise it further if your channel is phone-verified and your Cloud project has quota.
+
+**Important:** YouTube also enforces a separate *account-level* limit (`uploadLimitExceeded: "The user has exceeded the number of videos they may upload."`). A brand-new or phone-unverified channel can hit this after only a handful of uploads in a rolling 24 h window, regardless of the app cap. When that happens the scheduler automatically pauses uploads for `YOUTUBE_LIMIT_COOLDOWN_HOURS` (default 6) and shows the countdown in the UI. Verify your channel's phone number at <https://www.youtube.com/verify> to raise the real limit. AmberClaw decouples generation from uploading:
 
 1. A job generates any number of clips. With `AUTO_UPLOAD=true` and `UPLOAD_MODE=queue`, every finished clip is written to `data/jobs/upload_queue.json` as `pending` — **no YouTube API call is made during generation**.
 2. The in-app scheduler wakes every `UPLOAD_TICK_MINUTES` (default 10) and uploads at most `YOUTUBE_DAILY_UPLOAD_LIMIT` (default 20) pending clips, oldest first. Status, links, errors and retry controls are on the **Daily YouTube upload queue** card in the UI (`GET /api/queue`).
