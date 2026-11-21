@@ -75,6 +75,10 @@ def build_command(payload: dict):
         cmd.append("--fast")
 
     brain = (payload.get("brain") or os.environ.get("STREAMCLIPS_BRAIN") or "groq").strip()
+    # The dashboard runs unattended. Agent mode exits and waits for a human/agent
+    # to answer transcript prompt files, which never happens on the server.
+    if brain == "agent" and not _bool(os.environ.get("STREAMCLIPS_ALLOW_AGENT"), False):
+        brain = "groq"
     cmd += ["--brain", brain]
     model = (payload.get("model") or os.environ.get("STREAMCLIPS_MODEL") or "").strip()
     if model:

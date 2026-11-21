@@ -106,6 +106,14 @@ def _form_int(value, name: str, default: int, low: int, high: int) -> int:
     return max(low, min(parsed, high))
 
 
+def _brain(value):
+    b = (value or os.environ.get("STREAMCLIPS_BRAIN") or "groq").strip()
+    allowed_agent = os.environ.get("STREAMCLIPS_ALLOW_AGENT", "").strip().lower() in {"1", "true", "yes", "on"}
+    if b == "agent" and not allowed_agent:
+        return "groq"
+    return b
+
+
 _STALL_SECONDS = {"running": 20 * 60, "queued": 5 * 60}
 
 
@@ -190,7 +198,7 @@ def create_job(
         "count": _form_int(count, "count", 5, 1, 100),
         "clips": _form_int(clips, "clips", 3, 1, 100),
         "when": (when or "today").strip(),
-        "brain": (brain or os.environ.get("STREAMCLIPS_BRAIN", "groq")).strip(),
+        "brain": _brain(brain),
         "language": (language or "").strip() or None,
         "extra_args": (extra_args or "").strip(),
         "auto_upload": bool(auto_upload),

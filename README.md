@@ -86,7 +86,7 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 ## Daily usage
 
 - Open the AmberClaw web UI and submit your daily prompt (topic or URLs + focus). This is the "input prompt" workflow you can run each day.
-- Use the default `brain=groq` with a free `GROQ_API_KEY` for automated runs. `brain=agent` will pause waiting for manual answers (exit code 3) and is not suitable for unattended server runs.
+- Use the default `brain=groq` with a free `GROQ_API_KEY` for automated runs. `brain=agent` pauses waiting for manual answers (exit code 3), so the dashboard forces `groq` for new jobs unless `STREAMCLIPS_ALLOW_AGENT=true` is set explicitly.
 - Generated clips, `clips.json`, `POSTING.md`, and check images are written under `STREAMCLIPS_HOME` (default: `<AMBERCLAW_DATA_DIR>/StreamClips/<date>/<topic>/...`).
 - Review clips before posting/uploading. Uploads can be triggered per-result from the job page, or auto-uploaded when `AUTO_UPLOAD=true` / checkbox enabled (and YouTube auth is configured). With `UPLOAD_MODE=queue` (default), "auto-upload" means clips are added to the daily queue instead of being uploaded immediately.
 
@@ -206,7 +206,7 @@ If Render resources/limits are insufficient for your clip workloads, run AmberCl
 - `ffmpeg/ffprobe not found` or YouTube download issues: ensure ffmpeg and deno/node are installed and on PATH; rerun `streamclips doctor`.
 - `brain=groq` errors: verify `GROQ_API_KEY` (free from https://console.groq.com/keys), `GROQ_BASE_URL` (default `https://api.groq.com/openai/v1`), and `GROQ_MODEL` (default `openai/gpt-oss-20b`). For heavier picking, try `openai/gpt-oss-120b`.
 - `brain=openai` errors: verify `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`.
-- `needs_attention` (agent mode): automated server runs cannot answer agent prompts; switch to `brain=groq` or a configured CLI brain.
+- `needs_attention` (old agent-mode jobs): automated server runs cannot answer agent prompts. New dashboard jobs are forced to `groq`; resubmit any old `needs_attention` job with the groq picker.
 - YouTube upload auth errors: re-generate `token.json` with `scripts/youtube_auth.py` and confirm client/token paths and API/scopes.
 - See stream-clips docs/issues and `vendor/stream-clips/README.md` / `SKILL.md` for tool-specific behavior.
 

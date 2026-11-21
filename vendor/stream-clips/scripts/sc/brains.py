@@ -197,14 +197,17 @@ def _ask_api(brain, key_name, base_name, default_base, model_name, default_model
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "Follow the user's instructions exactly. Reply with only the JSON array requested."},
+            {"role": "system", "content": "Follow the user's instructions exactly. Reply with only the JSON array requested. Never answer with an empty array when the transcript contains spoken words."},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
         # gpt-oss is a reasoning model: it spends tokens on hidden reasoning before
-        # emitting the JSON array. A small budget leaves the content empty.
-        "max_tokens": 1800,
+        # emitting the JSON array. Keep enough room for the JSON and ask for low
+        # reasoning so short free-tier calls still return picks instead of [].
+        "max_tokens": 2500,
     }
+    if "gpt-oss" in model:
+        payload["reasoning_effort"] = "low"
     data = json.dumps(payload).encode("utf-8")
     for attempt in range(_MAX_RETRIES + 1):
         _throttle()

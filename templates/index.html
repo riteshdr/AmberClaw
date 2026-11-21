@@ -123,11 +123,6 @@
             </select></div>
             <div><label>Brain / picker</label><select name="brain">
               <option value="groq" {% if defaults.brain == 'groq' %}selected{% endif %}>groq (free)</option>
-              <option value="openai">openai (paid)</option>
-              <option value="auto">auto (local CLIs)</option>
-              <option value="claude">claude</option><option value="codex">codex</option>
-              <option value="gemini">gemini</option><option value="opencode">opencode</option>
-              <option value="agent">agent (manual)</option>
             </select></div>
           </div>
           <label>Language code (optional)</label>
@@ -247,7 +242,7 @@
       if(isStale(j)) return 'warn';
       return j.status==='running' ? 'run' : j.status==='queued' ? 'queue' : j.status==='succeeded' ? 'ok' : j.status==='failed' ? 'bad' : 'warn';
     }
-    function setVal(name, val){ const el = document.querySelector(`[name="${name}"]`); if(el) el.value = val || ''; }
+    function setVal(name, val){ const el = document.querySelector(`[name="${name}"]`); if(!el) return; if(el.options && val && !Array.from(el.options).some(o => o.value === val)){ el.value = el.options[0].value; return; } el.value = val || ''; }
 
     // ----- presets -----
     document.getElementById('preset').addEventListener('change', e => {
