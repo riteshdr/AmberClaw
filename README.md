@@ -15,7 +15,8 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 ## Repository layout
 
 - `app.py` - FastAPI web UI and job API
-- `amberclaw/` - job runner, store, YouTube uploader
+- `amberclaw/` - job runner, store, YouTube uploader, daily upload queue and scheduler
+- `scripts/daily_upload.py` - run one upload batch from cron / Windows Task Scheduler
 - `vendor/stream-clips/` - vendored stream-clips skill/scripts (with `groq`/`openai` brain support added)
 - `templates/` - UI templates
 - `scripts/youtube_auth.py` - helper to generate YouTube OAuth token
@@ -86,7 +87,36 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 - Open the AmberClaw web UI and submit your daily prompt (topic or URLs + focus). This is the "input prompt" workflow you can run each day.
 - Use the default `brain=groq` with a free `GROQ_API_KEY` for automated runs. `brain=agent` will pause waiting for manual answers (exit code 3) and is not suitable for unattended server runs.
 - Generated clips, `clips.json`, `POSTING.md`, and check images are written under `STREAMCLIPS_HOME` (default: `<AMBERCLAW_DATA_DIR>/StreamClips/<date>/<topic>/...`).
-- Review clips before posting/uploading. Uploads can be triggered per-result from the job page, or auto-uploaded when `AUTO_UPLOAD=true` / checkbox enabled (and YouTube auth is configured).
+- Review clips before posting/uploading. Uploads can be triggered per-result from the job page, or auto-uploaded when `AUTO_UPLOAD=true` / checkbox enabled (and YouTube auth is configured). With `UPLOAD_MODE=queue` (default), "auto-upload" means clips are added to the daily queue instead of being uploaded immediately.
+
+### Daily upload queue (6/day without a quota increase)
+
+YouTube's free Data API allowance is 10,000 units/day and one `videos.insert` costs 1,600 units, so only **6 uploads per quota day** fit (quota resets at midnight Pacific Time). AmberClaw decouples generation from uploading:
+
+1. A job generates any number of clips. With `AUTO_UPLOAD=true` and `UPLOAD_MODE=queue`, every finished clip is written to `data/jobs/upload_queue.json` as `pending` — **no YouTube API call is made during generation**.
+2. The in-app scheduler wakes every `UPLOAD_TICK_MINUTES` (default 10) and uploads at most `YOUTUBE_DAILY_UPLOAD_LIMIT` (default 6) pending clips, oldest first. Status, links, errors and retry controls are on the **Daily YouTube upload queue** card in the UI (`GET /api/queue`).
+3. Clip files must stay on disk until uploaded. The queue stores paths, titles, captions, creator credit and source URL; tags/privacy/template are read from `.env` at upload time, so changing them later applies to not-yet-uploaded clips.
+
+Useful controls: `Run batch now`, `Pause` / `Resume`, `Scan old clips` (enqueue clips from previous jobs), and per-item `retry` / `remove`. The queue is crash-safe: interrupted uploads are recovered, a file lock prevents two processes uploading the same batch, and failed items never consume the daily counter.
+
+Environment options:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `UPLOAD_MODE` | `queue` | `queue` = enqueue and upload daily; `immediate` = upload inside the job |
+| `UPLOAD_SCHEDULER_ENABLED` | `true` | Start the in-app scheduler thread on web startup |
+| `UPLOAD_TICK_MINUTES` | `10` | How often the scheduler checks the queue |
+| `YOUTUBE_DAILY_UPLOAD_LIMIT` | `6` | Max successful uploads per quota day (set higher after quota approval) |
+| `UPLOAD_QUEUE_PATH` | `<DATA_DIR>/jobs/upload_queue.json` | Queue state file |
+| `UPLOAD_DRY_RUN` | `false` | Log what would be uploaded without spending quota |
+
+For external cron / Windows Task Scheduler, run one batch and exit:
+
+```bash
+python scripts/daily_upload.py            # respects the daily limit
+python scripts/daily_upload.py --force    # ignore the paused flag
+python scripts/daily_upload.py --loop     # run continuously instead
+```
 
 ### Captions and video quality
 

@@ -106,7 +106,7 @@
           <input type="text" name="language" placeholder="en = Roman Hinglish (default), hi = Devanagari, blank = auto" />
 
           <label class="check"><input type="checkbox" name="find" checked /> Find streams by topic when no URLs are provided</label>
-          <label class="check"><input type="checkbox" name="auto_upload" {% if defaults.auto_upload %}checked{% endif %} /> Auto-upload generated clips to YouTube after this job (requires configured OAuth/token)</label>
+          <label class="check"><input type="checkbox" name="auto_upload" {% if defaults.auto_upload %}checked{% endif %} /> {% if defaults.upload_mode == 'queue' %}Add generated clips to the daily YouTube upload queue (6/day by default){% else %}Auto-upload generated clips to YouTube right after this job{% endif %} (requires configured OAuth/token)</label>
 
           <button class="btn" type="submit">Run AmberClaw job</button>
         </form>
@@ -135,6 +135,25 @@
           </tbody>
         </table>
       </div>
+    </div>
+
+    <div class="card" style="margin-top:16px" id="queue-card">
+      <div class="topbar">
+        <h3 style="margin:0">Daily YouTube upload queue</h3>
+        <div class="small" id="queue-mode">Generate now, upload a few each day</div>
+      </div>
+      <div class="hint" id="queue-summary">Loading queue status…</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px">
+        <button class="btn" style="width:auto; margin-top:0" id="btn-run">Run batch now</button>
+        <button class="btn" style="width:auto; margin-top:0; background:#2b3445; color:#e8edf2" id="btn-pause">Pause</button>
+        <button class="btn" style="width:auto; margin-top:0; background:#2b3445; color:#e8edf2" id="btn-resume">Resume</button>
+        <button class="btn" style="width:auto; margin-top:0; background:#2b3445; color:#e8edf2" id="btn-scan">Scan old clips</button>
+      </div>
+      <div id="queue-logs" class="small mono" style="margin-top:10px; max-height:90px; overflow:auto"></div>
+      <table style="margin-top:10px">
+        <thead><tr><th>Clip</th><th>Topic / creator</th><th>Status</th><th>Uploaded</th><th></th></tr></thead>
+        <tbody id="queue-body"><tr><td colspan="5" class="small">Loading…</td></tr></tbody>
+      </table>
     </div>
   </div>
 
@@ -190,6 +209,66 @@
     }
     refresh();
     setInterval(refresh, 4000);
+
+    // ----- daily upload queue -----
+    async function queuePost(url){
+      try{
+        const r = await fetch(url, {method:'POST', cache:'no-store'});
+        if(r.ok){ await refreshQueue(); }
+        else { alert('Request failed: ' + r.status); }
+      }catch(e){ alert('Request failed: ' + e); }
+    }
+    document.getElementById('btn-run').onclick = () => {
+      if(confirm('Upload a batch now? This uses YouTube quota (up to the daily limit).')) queuePost('/api/queue/run');
+    };
+    document.getElementById('btn-pause').onclick = () => queuePost('/api/queue/pause');
+    document.getElementById('btn-resume').onclick = () => queuePost('/api/queue/resume');
+    document.getElementById('btn-scan').onclick = () => {
+      if(confirm('Add clips from ALL previous jobs to the upload queue? Old clips with imperfect captions may be included.')) queuePost('/api/queue/scan');
+    };
+
+    function renderQueue(data){
+      const s = data.status || {}, c = s.counts || {};
+      const left = Math.max(0, (s.daily_limit||0) - (s.uploaded_today||0));
+      document.getElementById('queue-summary').innerHTML =
+        `<b>${s.alive ? 'Scheduler running' : 'Scheduler stopped'}</b> ` +
+        `· quota day <span class="mono">${esc(s.quota_day||'')}</span> ` +
+        `· uploaded today <b>${s.uploaded_today||0}/${s.daily_limit||0}</b> ` +
+        `· <b>${left}</b> slot(s) left · pending <b>${c.pending||0}</b> ` +
+        `· uploaded <b>${c.uploaded||0}</b> · failed <b>${c.failed||0}</b>` +
+        (s.paused ? ' · <span class="stale">PAUSED</span>' : '');
+      const logs = (s.logs||[]).slice(0,6).map(x => esc(x)).join('<br>');
+      document.getElementById('queue-logs').innerHTML = logs || 'No scheduler activity yet.';
+      const body = document.getElementById('queue-body');
+      const items = data.items || [];
+      if(!items.length){ body.innerHTML = '<tr><td colspan="5" class="small">Queue is empty. Generate clips or click “Scan old clips”.</td></tr>'; return; }
+      body.innerHTML = items.slice(0,40).map(i => {
+        const st = i.status || 'pending';
+        const pill = st==='uploaded' ? 's-succeeded' : st==='failed' ? 's-failed' : st==='uploading' ? 's-running' : 's-queued';
+        const link = i.url ? `<a href="${esc(i.url)}" target="_blank">watch</a>` : '';
+        const err = i.error ? `<br><span class="stale" title="${esc(i.error)}">error</span>` : '';
+        const action = st==='failed'
+          ? `<button class="btn" style="width:auto;margin-top:0;padding:4px 8px" onclick="queuePost('/api/queue/item/${esc(i.id)}/retry')">retry</button> `
+          : st==='pending'
+          ? `<button class="btn" style="width:auto;margin-top:0;padding:4px 8px;background:#2b3445;color:#e8edf2" onclick="queuePost('/api/queue/item/${esc(i.id)}/remove')">remove</button> `
+          : '';
+        return `<tr>
+          <td class="small mono">${esc(i.file)}</td>
+          <td class="small">${esc((i.topic||'') + ' / ' + (i.creator||''))}</td>
+          <td><span class="pill ${pill}">${esc(st)}</span>${err}</td>
+          <td class="small">${esc((i.uploaded_at||i.updated_at||'').slice(0,16))} ${link}</td>
+          <td>${action}</td>
+        </tr>`;
+      }).join('');
+    }
+    async function refreshQueue(){
+      try{
+        const r = await fetch('/api/queue', {cache:'no-store'});
+        if(r.ok) renderQueue(await r.json());
+      }catch(e){}
+    }
+    refreshQueue();
+    setInterval(refreshQueue, 8000);
   </script>
 </body>
 </html>

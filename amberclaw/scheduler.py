@@ -1,0 +1,202 @@
+import os
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .queue_store import UploadQueue
+from .uploader import UploadError, build_upload_fields, upload_video
+
+_DEFAULT_TEMPLATE = "Clipped from {creator}: {title}\nSource: {url}\n\n{caption}\n\n{hashtags}\n\nCredit: {creator} ({url})"
+
+
+def _bool(v, default=False):
+    if v is None:
+        return default
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in {"1", "true", "yes", "on"}
+
+
+class UploadScheduler:
+    """Uploads queued clips in small daily batches to respect YouTube quota."""
+
+    def __init__(self, queue: UploadQueue, store=None, log=None):
+        self.queue = queue
+        self.store = store
+        self.logs = []
+        self._external_log = log
+        self._stop = threading.Event()
+        self._thread = None
+        self.lock_path = Path(str(queue.path) + ".lock")
+
+    # ---------- logging ----------
+
+    def _log(self, msg):
+        line = f"{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} {msg}"
+        self.logs.insert(0, line)
+        del self.logs[100:]
+        if self._external_log:
+            try:
+                self._external_log(line)
+            except Exception:
+                pass
+
+    # ---------- cross-process lock ----------
+
+    def _acquire_lock(self):
+        try:
+            fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, f"{os.getpid()} {time.time()}".encode())
+            os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                if time.time() - self.lock_path.stat().st_mtime > 7200:
+                    self.lock_path.unlink(missing_ok=True)
+                    return self._acquire_lock()
+            except Exception:
+                pass
+            return False
+        except Exception:
+            return False
+
+    def _release_lock(self):
+        try:
+            self.lock_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    # ---------- lifecycle ----------
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return self._thread
+        self._stop.clear()
+        interval = max(1, int(os.environ.get("UPLOAD_TICK_MINUTES", "10"))) * 60
+
+        def loop():
+            while not self._stop.is_set():
+                self._stop.wait(interval)
+                if self._stop.is_set():
+                    break
+                try:
+                    self.run_once()
+                except Exception as e:  # noqa: BLE001
+                    self._log(f"[scheduler] tick error: {e}")
+
+        self._thread = threading.Thread(target=loop, name="upload-scheduler", daemon=True)
+        self._thread.start()
+        self._log(f"[scheduler] started (every {interval // 60} min)")
+        return self._thread
+
+    def stop(self):
+        self._stop.set()
+
+    def is_alive(self):
+        return bool(self._thread and self._thread.is_alive())
+
+    def status(self):
+        st = self.queue.state()
+        return {
+            "alive": self.is_alive(),
+            "paused": bool(st.get("paused")),
+            "quota_day": st.get("day"),
+            "uploaded_today": int(st.get("uploaded") or 0),
+            "daily_limit": max(0, int(os.environ.get("YOUTUBE_DAILY_UPLOAD_LIMIT", "6"))),
+            "last_tick": st.get("last_tick"),
+            "last_error": st.get("last_error"),
+            "counts": self.queue.counts(),
+            "logs": self.logs[:20],
+        }
+
+    # ---------- the batch ----------
+
+    def run_once(self, force=False):
+        if not self._acquire_lock():
+            self._log("[scheduler] another batch is already running; skipping this tick")
+            return {"ran": False, "reason": "locked"}
+
+        result = {"ran": True, "uploaded": 0, "failed": 0, "skipped": 0}
+        try:
+            recovered = self.queue.reset_stale()
+            if recovered:
+                self._log(f"[scheduler] recovered {recovered} interrupted upload(s)")
+
+            if self.queue.is_paused() and not force:
+                self.queue.touch_tick()
+                self._log("[scheduler] paused; no uploads this tick")
+                result["reason"] = "paused"
+                return result
+
+            limit = max(0, int(os.environ.get("YOUTUBE_DAILY_UPLOAD_LIMIT", "6")))
+            remaining = limit - self.queue.uploaded_today()
+            if remaining <= 0:
+                self.queue.touch_tick()
+                self._log(f"[scheduler] daily limit reached ({limit}); quota resets at midnight Pacific Time")
+                result["reason"] = "limit_reached"
+                return result
+
+            items = self.queue.claim(remaining)
+            if not items:
+                self.queue.touch_tick()
+                result["reason"] = "empty"
+                return result
+
+            privacy = os.environ.get("YOUTUBE_PRIVACY", "private")
+            category = os.environ.get("YOUTUBE_CATEGORY_ID", "20")
+            client_secrets = os.environ.get("YOUTUBE_CLIENT_SECRETS", "client_secrets.json")
+            token_file = os.environ.get("YOUTUBE_TOKEN_FILE", "token.json")
+            desc_tmpl = os.environ.get("YOUTUBE_DESCRIPTION_TEMPLATE", _DEFAULT_TEMPLATE)
+            default_tags = [t.strip() for t in
+                            os.environ.get("YOUTUBE_TAGS_DEFAULT", "shorts,clips").split(",") if t.strip()]
+            dry_run = _bool(os.environ.get("UPLOAD_DRY_RUN"), False)
+
+            self._log(f"[scheduler] processing {len(items)} clip(s) (dry_run={dry_run})")
+            for it in items:
+                vpath = Path(it["outdir"]) / it["file"]
+                try:
+                    if not vpath.exists():
+                        raise UploadError(f"Video not found: {vpath}")
+                    title, desc, tags = build_upload_fields(
+                        caption=it.get("caption") or "",
+                        hashtags=it.get("hashtags") or [],
+                        creator=it.get("creator") or "Unknown creator",
+                        source_title=it.get("source_title") or "",
+                        source_url=it.get("source_url") or "",
+                        title=it.get("title") or "",
+                        default_tags=default_tags,
+                        description_template=desc_tmpl,
+                    )
+                    if dry_run:
+                        self._log(f"[scheduler][dry-run] would upload {vpath.name} -> {title}")
+                        self.queue.release(it["id"])
+                        result["skipped"] += 1
+                        continue
+
+                    resp = upload_video(
+                        vpath, title=title, description=desc, tags=tags,
+                        privacy=privacy, category_id=category,
+                        client_secrets=client_secrets, token_file=token_file,
+                    )
+                    vid = resp.get("id") if isinstance(resp, dict) else None
+                    if not vid:
+                        raise UploadError("YouTube did not return a video id")
+                    self.queue.finish(it["id"], video_id=vid)
+                    result["uploaded"] += 1
+                    line = f"[scheduler] uploaded {vpath.name} -> https://youtu.be/{vid}"
+                    self._log(line)
+                    if self.store and it.get("job_id"):
+                        self.store.append_log(it["job_id"], line)
+                except Exception as e:  # noqa: BLE001
+                    self.queue.finish(it["id"], error=e)
+                    result["failed"] += 1
+                    line = f"[scheduler] upload failed for {it.get('file')}: {e}"
+                    self._log(line)
+                    if self.store and it.get("job_id"):
+                        self.store.append_log(it["job_id"], line)
+
+            self.queue.touch_tick()
+        finally:
+            self._release_lock()
+        return result

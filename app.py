@@ -10,7 +10,9 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from amberclaw.queue_store import UploadQueue
 from amberclaw.runner import start_job_async
+from amberclaw.scheduler import UploadScheduler
 from amberclaw.store import JobStore
 from amberclaw.uploader import UploadError, upload_clips_from_dir
 
@@ -20,6 +22,10 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("AMBERCLAW_DATA_DIR", BASE_DIR / "data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 store = JobStore(DATA_DIR / "jobs")
+
+_queue_path = os.environ.get("UPLOAD_QUEUE_PATH") or str(DATA_DIR / "jobs" / "upload_queue.json")
+upload_queue = UploadQueue(_queue_path)
+scheduler = UploadScheduler(upload_queue, store=store)
 
 app = FastAPI(title="AmberClaw")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -36,6 +42,11 @@ def _reconcile_on_startup():
         store.reconcile_interrupted()
     except Exception:
         pass
+    if os.environ.get("UPLOAD_SCHEDULER_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
+        try:
+            scheduler.start()
+        except Exception:
+            pass
 
 
 def require_auth(credentials: Optional[HTTPBasicCredentials] = Depends(security)):
@@ -67,7 +78,10 @@ def index(request: Request, _=Depends(require_auth)):
         "defaults": {
             "brain": os.environ.get("STREAMCLIPS_BRAIN", "groq"),
             "auto_upload": os.environ.get("AUTO_UPLOAD", "false").lower() in {"1", "true", "yes", "on"},
+            "upload_mode": os.environ.get("UPLOAD_MODE", "queue").strip().lower(),
         },
+        "queue": scheduler.status(),
+        "queue_items": [i for i in upload_queue.list_items(limit=60) if i.get("status") != "removed"],
     })
 
 
@@ -103,7 +117,7 @@ def create_job(
         "auto_upload": bool(auto_upload),
     }
     job = store.create(payload)
-    start_job_async(store, job["id"])
+    start_job_async(store, job["id"], upload_queue)
     return RedirectResponse(url=f"/jobs/{job['id']}", status_code=303)
 
 
@@ -182,6 +196,68 @@ def download(path: str, _=Depends(require_auth)):
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+# ------------------------- daily upload queue -------------------------
+
+@app.get("/api/queue")
+def queue_json(_=Depends(require_auth)):
+    status = scheduler.status()
+    items = [i for i in upload_queue.list_items(limit=300) if i.get("status") != "removed"]
+    return JSONResponse({"status": status, "items": items})
+
+
+@app.post("/api/queue/run")
+def queue_run(force: bool = False, _=Depends(require_auth)):
+    return JSONResponse(scheduler.run_once(force=force))
+
+
+@app.post("/api/queue/pause")
+def queue_pause(_=Depends(require_auth)):
+    upload_queue.set_paused(True)
+    scheduler._log("[scheduler] paused by user")
+    return JSONResponse({"paused": True})
+
+
+@app.post("/api/queue/resume")
+def queue_resume(_=Depends(require_auth)):
+    upload_queue.set_paused(False)
+    scheduler._log("[scheduler] resumed by user")
+    return JSONResponse({"paused": False})
+
+
+@app.post("/api/queue/scan")
+def queue_scan(_=Depends(require_auth)):
+    """Enqueue clips from every existing job output (for clips generated before queuing existed)."""
+    added = 0
+    for job in store.list(500):
+        result = job.get("result") or {}
+        for od in result.get("outdirs") or []:
+            try:
+                added += len(upload_queue.add_clips(
+                    outdir=od, job_id=job.get("id", ""),
+                    topic=(job.get("payload") or {}).get("topic") or "",
+                ))
+            except Exception:
+                pass
+    scheduler._log(f"[queue] scan complete; {added} new clip(s) queued")
+    return JSONResponse({"added": added, "counts": upload_queue.counts()})
+
+
+@app.post("/api/queue/item/{item_id}/retry")
+def queue_retry(item_id: str, _=Depends(require_auth)):
+    item = upload_queue.retry(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Queue item not found")
+    return JSONResponse(item)
+
+
+@app.post("/api/queue/item/{item_id}/remove")
+def queue_remove(item_id: str, _=Depends(require_auth)):
+    item = upload_queue.remove(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Queue item not found")
+    return JSONResponse(item)
 
 
 if __name__ == "__main__":

@@ -137,7 +137,7 @@ def _summarize_dirs(dirs):
     return results
 
 
-def run_job(store: JobStore, job_id: str):
+def run_job(store: JobStore, job_id: str, queue=None):
     job = store.get(job_id)
     if not job:
         return
@@ -184,7 +184,31 @@ def run_job(store: JobStore, job_id: str):
 
     uploads = []
     auto_upload = _bool(payload.get("auto_upload"), default=_bool(os.environ.get("AUTO_UPLOAD"), False))
-    if auto_upload and outdirs and has_clips:
+    upload_mode = str(os.environ.get("UPLOAD_MODE", "queue")).strip().lower()
+
+    # Queue mode: generate now, upload a few each day. No immediate API calls.
+    if auto_upload and outdirs and has_clips and upload_mode == "queue" and queue is not None:
+        for od in outdirs:
+            if not (Path(od) / "clips.json").exists():
+                continue
+            try:
+                added = queue.add_clips(
+                    outdir=od, job_id=job_id,
+                    topic=payload.get("topic") or payload.get("prompt") or "",
+                    job_log=lambda msg: store.append_log(job_id, msg),
+                )
+                uploads.append({"outdir": od, "status": "queued", "clips": len(added)})
+            except Exception as e:  # noqa: BLE001
+                store.append_log(job_id, f"Queue failed for {od}: {e}")
+                uploads.append({"outdir": od, "status": "failed", "error": str(e)})
+        store.update(job_id, uploads=uploads)
+        store.append_log(job_id, "[system] Clips queued for daily upload; generate more any time.")
+        # Skip the immediate-upload block below.
+        outdirs_for_upload = []
+    else:
+        outdirs_for_upload = outdirs
+
+    if auto_upload and outdirs_for_upload and has_clips:
         privacy = payload.get("youtube_privacy") or os.environ.get("YOUTUBE_PRIVACY", "private")
         category = payload.get("youtube_category_id") or os.environ.get("YOUTUBE_CATEGORY_ID", "20")
         client_secrets = os.environ.get("YOUTUBE_CLIENT_SECRETS", "client_secrets.json")
@@ -192,7 +216,7 @@ def run_job(store: JobStore, job_id: str):
         desc_tmpl = os.environ.get("YOUTUBE_DESCRIPTION_TEMPLATE",
                                    "Clipped from {creator}: {title}\nSource: {url}\n\n{caption}\n\n{hashtags}\n\nCredit: {creator} ({url})")
         default_tags = [t.strip() for t in os.environ.get("YOUTUBE_TAGS_DEFAULT", "shorts,clips").split(",") if t.strip()]
-        for od in outdirs:
+        for od in outdirs_for_upload:
             try:
                 p = Path(od)
                 if not (p / "clips.json").exists():
@@ -222,7 +246,7 @@ def run_job(store: JobStore, job_id: str):
     store.update(job_id, status=final_status, result=result, uploads=uploads, error=final_error)
 
 
-def start_job_async(store: JobStore, job_id: str):
-    t = threading.Thread(target=run_job, args=(store, job_id), daemon=True)
+def start_job_async(store: JobStore, job_id: str, queue=None):
+    t = threading.Thread(target=run_job, args=(store, job_id, queue), daemon=True)
     t.start()
     return t

@@ -52,6 +52,25 @@ def render_description(template: str, *, creator: str, title: str, url: str, cap
         return f"Clipped from {creator}\nSource: {url}\n\n{caption}\n\n{hashtags}"
 
 
+def build_upload_fields(*, caption: str, hashtags: list[str], creator: str,
+                        source_title: str, source_url: str, title: str,
+                        default_tags: list[str], description_template: str):
+    """Build the YouTube title/description/tags shared by immediate and scheduled uploads."""
+    creator = creator or "Unknown creator"
+    tags = list(dict.fromkeys(
+        [t.lstrip('#') for t in (hashtags or [])] + list(default_tags or []) + [creator]
+    ))
+    desc = render_description(
+        description_template, creator=creator, title=source_title or title or "",
+        url=source_url or "", caption=caption or "",
+        hashtags=" ".join(hashtags or []),
+    )
+    full_title = f"{title} | {creator}"
+    if len(full_title) > 100:
+        full_title = title
+    return full_title[:100], desc[:4900], tags[:30]
+
+
 def upload_video(video_path: str | Path, *, title: str, description: str, tags: list[str],
                  privacy: str = "private", category_id: str = "20",
                  client_secrets: str = "client_secrets.json", token_file: str = "token.json"):
@@ -98,15 +117,13 @@ def upload_clips_from_dir(outdir: str | Path, *, privacy: str, category_id: str,
     for c in data.get("clips") or []:
         vpath = outdir / c.get("file", "")
         caption = c.get("caption") or ""
-        hashtags = " ".join(c.get("hashtags") or [])
+        hashtags = c.get("hashtags") or []
         title = c.get("title") or caption or src_title or vpath.stem
-        # include creator credit in title when space allows
-        full_title = f"{title} | {creator}"
-        if len(full_title) > 100:
-            full_title = title
-        desc = render_description(description_template, creator=creator, title=src_title or title,
-                                  url=src_url, caption=caption, hashtags=hashtags)
-        tags = list(dict.fromkeys([t.lstrip('#') for t in (c.get('hashtags') or [])] + default_tags + [creator]))
+        full_title, desc, tags = build_upload_fields(
+            caption=caption, hashtags=hashtags, creator=creator,
+            source_title=src_title, source_url=src_url, title=title,
+            default_tags=default_tags, description_template=description_template,
+        )
         if on_progress:
             on_progress(f"Uploading {vpath.name} ...")
         resp = upload_video(vpath, title=full_title, description=desc, tags=tags,
