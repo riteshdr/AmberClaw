@@ -21,6 +21,13 @@ def _now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def next_quota_reset():
+    """ISO timestamp of the next YouTube quota reset (midnight Pacific)."""
+    now = datetime.now(_QUOTA_TZ)
+    nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return nxt.isoformat()
+
+
 class UploadQueue:
     """Persistent queue of generated clips waiting to be uploaded to YouTube.
 

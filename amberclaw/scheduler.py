@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import metadata as meta
-from .queue_store import UploadQueue
+from .queue_store import UploadQueue, next_quota_reset
 from .uploader import UploadError, build_upload_fields, upload_video
 
 _DEFAULT_TEMPLATE = "Clipped from {creator}: {title}\nSource: {url}\n\n{caption}\n\n{hashtags}\n\nCredit: {creator} ({url})"
@@ -17,6 +17,16 @@ def _bool(v, default=False):
     if isinstance(v, bool):
         return v
     return str(v).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _age_seconds(iso):
+    if not iso:
+        return None
+    try:
+        t = datetime.strptime(str(iso), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+        return max(0, int(time.time() - t))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 class UploadScheduler:
@@ -99,15 +109,33 @@ class UploadScheduler:
 
     def status(self):
         st = self.queue.state()
+        limit = max(0, int(os.environ.get("YOUTUBE_DAILY_UPLOAD_LIMIT", "6")))
+        used = int(st.get("uploaded") or 0)
+        counts = self.queue.counts()
+        failed = self.queue.list_items(status="failed", limit=8)
+        uploading = self.queue.list_items(status="uploading", limit=8)
         return {
             "alive": self.is_alive(),
             "paused": bool(st.get("paused")),
             "quota_day": st.get("day"),
-            "uploaded_today": int(st.get("uploaded") or 0),
-            "daily_limit": max(0, int(os.environ.get("YOUTUBE_DAILY_UPLOAD_LIMIT", "6"))),
+            "uploaded_today": used,
+            "daily_limit": limit,
+            "remaining": max(0, limit - used),
+            "quota_reset_at": next_quota_reset(),
+            "quota_timezone": "America/Los_Angeles (midnight Pacific)",
+            "tick_minutes": max(1, int(os.environ.get("UPLOAD_TICK_MINUTES", "10"))),
             "last_tick": st.get("last_tick"),
+            "last_tick_age_seconds": _age_seconds(st.get("last_tick")),
             "last_error": st.get("last_error"),
-            "counts": self.queue.counts(),
+            "counts": counts,
+            "failures": [{
+                "id": i.get("id"), "file": i.get("file"), "error": i.get("error"),
+                "updated_at": i.get("updated_at"), "attempts": i.get("attempts"),
+            } for i in failed],
+            "uploading": [{
+                "id": i.get("id"), "file": i.get("file"), "updated_at": i.get("updated_at"),
+                "age_seconds": _age_seconds(i.get("updated_at")),
+            } for i in uploading],
             "logs": self.logs[:20],
         }
 
@@ -209,6 +237,11 @@ class UploadScheduler:
                         self.store.append_log(it["job_id"], line)
 
             self.queue.touch_tick()
+        except Exception as e:  # noqa: BLE001
+            self.queue.touch_tick(error=e)
+            result["error"] = str(e)
+            self._log(f"[scheduler] tick failed: {e}")
+            return result
         finally:
             self._release_lock()
         return result

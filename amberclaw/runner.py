@@ -152,6 +152,35 @@ def _summarize_dirs(dirs):
     return results
 
 
+def _progress_from_log(lines):
+    """Extract per-stream transcription/download progress for the job UI."""
+    out = {}
+    for line in lines:
+        m = re.search(r"(?:\[\d+:\d+\]\s*)?(.+?):\s*heard\s+(\d+)\s*/\s*(\d+)", line)
+        if m:
+            name = m.group(1).strip()
+            out[name] = {"done": int(m.group(2)), "total": int(m.group(3)), "stage": "transcribing"}
+            continue
+        m = re.search(r"(?:\[\d+:\d+\]\s*)?(.+?):\s*(downloading|audio ready|rendering|cutting)", line)
+        if m:
+            name = m.group(1).strip()
+            out.setdefault(name, {"done": 0, "total": 0, "stage": m.group(2)})
+    return out
+
+
+def _failure_details(lines):
+    """Return the most useful log lines when a job exits with an error."""
+    problems = [ln.strip() for ln in lines
+                if re.match(r"^\s*(?:\[\d+:\d+\]\s*)?x\s+", ln)]
+    if problems:
+        return " | ".join(problems[-3:])[:500]
+    for ln in reversed(lines):
+        low = ln.lower()
+        if any(k in low for k in ("error", "failed", "not a bot", "age-restricted", "cookie")):
+            return ln.strip()[:500]
+    return (lines[-1].strip()[:500] if lines else "no log output")
+
+
 def run_job(store: JobStore, job_id: str, queue=None):
     job = store.get(job_id)
     if not job:
@@ -184,7 +213,14 @@ def run_job(store: JobStore, job_id: str, queue=None):
     outdirs = _scan_clip_dirs_from_log(lines)
     streams = _summarize_dirs(outdirs)
     has_clips = any((s.get("clips") or []) for s in streams)
-    result = {"exit_code": code, "outdirs": outdirs, "streams": streams}
+    result = {
+        "exit_code": code,
+        "outdirs": outdirs,
+        "streams": streams,
+        "progress": _progress_from_log(lines),
+        "last_problem": _failure_details(lines),
+        "last_log": (lines[-1] if lines else ""),
+    }
 
     if code == 3:
         # agent mode waiting for answers
@@ -193,8 +229,9 @@ def run_job(store: JobStore, job_id: str, queue=None):
                      error="stream-clips is waiting for agent answers (brain=agent). Use brain=groq or a configured CLI brain for automated runs.")
         return
     if code != 0 and not has_clips:
+        detail = result["last_problem"]
         store.update(job_id, status="failed", result=result,
-                     error=f"stream-clips exited with code {code} and produced no clips")
+                     error=f"stream-clips exited with code {code} and produced no clips. Reason: {detail}")
         return
 
     uploads = []
@@ -253,7 +290,8 @@ def run_job(store: JobStore, job_id: str, queue=None):
     final_status = "succeeded"
     final_error = None
     if code != 0 and has_clips:
-        final_error = f"stream-clips exited with code {code} but produced clips (partial success)"
+        final_error = (f"stream-clips exited with code {code} but produced clips (partial success). "
+                       f"Reason: {result['last_problem']}")
         store.append_log(job_id, f"[system] {final_error}")
     if auto_upload and has_clips and any(u.get("status") == "failed" for u in uploads) and not any(u.get("status") == "uploaded" for u in uploads):
         final_status = "failed"

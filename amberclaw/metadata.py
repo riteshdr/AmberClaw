@@ -8,7 +8,17 @@ import hashlib
 import json
 import os
 import re
+import urllib.error
 import urllib.request
+
+from .llm_stats import record as _record_llm
+
+
+def _record(provider, **kwargs):
+    try:
+        _record_llm(provider, **kwargs)
+    except Exception:  # noqa: BLE001 - monitoring must never block metadata generation
+        pass
 
 _SYSTEM = (
     "You write viral YouTube Shorts titles and descriptions for GTA 6 / GTA 5 gaming clips. "
@@ -126,13 +136,23 @@ def generate(*, caption, source_title="", creator="", topic=""):
         desc = str(obj.get("description") or "").strip()[:350]
         if not title or not desc:
             raise ValueError("empty metadata fields")
+        _record("groq", model=model, key=key, ok=True, http_status=200, kind="metadata")
         return title, desc
     except Exception as e:  # noqa: BLE001 - fall back rather than block an upload
+        detail = ""
+        status = None
+        if isinstance(e, urllib.error.HTTPError):
+            status = e.code
+            try:
+                detail = e.read().decode("utf-8", "replace")[:400]
+            except Exception:  # noqa: BLE001
+                detail = str(e)
+        else:
+            detail = str(e)
+        _record("groq", model=model, key=key, ok=False, http_status=status,
+                error=detail, kind="metadata")
         if os.environ.get("YOUTUBE_META_DEBUG", "").strip().lower() in {"1", "true", "yes"}:
             import sys
-            print(f"[metadata] Groq failed ({type(e).__name__}: {e}); using Hinglish fallback",
+            print(f"[metadata] Groq failed ({type(e).__name__}: {detail}); using Hinglish fallback",
                   file=sys.stderr)
-            if hasattr(e, "read"):
-                print(f"[metadata] response: {e.read().decode('utf-8', 'replace')[:800]}",
-                      file=sys.stderr)
         return _fallback(caption, source_title, creator, topic)

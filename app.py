@@ -2,6 +2,7 @@ import os
 import platform
 import secrets
 import shutil
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +13,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from amberclaw import llm_stats
 from amberclaw import presets as preset_lib
 from amberclaw import settings as settings_lib
 from amberclaw.queue_store import UploadQueue
@@ -78,16 +80,57 @@ def _safe_data_path(p: str | Path) -> Path:
     raise HTTPException(status_code=403, detail="Access outside data directory is not allowed")
 
 
+def _age_seconds(iso):
+    if not iso:
+        return None
+    try:
+        t = time.mktime(time.strptime(str(iso), "%Y-%m-%dT%H:%M:%SZ"))
+        return max(0, int(time.time() - t))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+_STALL_SECONDS = {"running": 20 * 60, "queued": 5 * 60}
+
+
+def _is_stalled(job):
+    age = _age_seconds(job.get("updated_at"))
+    limit = _STALL_SECONDS.get(job.get("status"))
+    return bool(age is not None and limit is not None and age > limit)
+
+
 def _job_stats(jobs):
     out = {"total": len(jobs), "queued": 0, "running": 0, "succeeded": 0,
-           "failed": 0, "needs_attention": 0, "clips": 0}
+           "failed": 0, "needs_attention": 0, "clips": 0, "stuck": 0}
     for j in jobs:
         s = j.get("status")
         if s in out:
             out[s] += 1
+        if _is_stalled(j):
+            out["stuck"] += 1
         for stream in ((j.get("result") or {}).get("streams") or []):
             out["clips"] += len(stream.get("clips") or [])
     return out
+
+
+def _job_problems(jobs):
+    """Short, UI-ready list of why a job is failed or looks stuck."""
+    problems = []
+    for j in jobs[:60]:
+        status = j.get("status")
+        reason = ""
+        if status in {"failed", "needs_attention"}:
+            reason = j.get("error") or "No error message was recorded"
+        elif _is_stalled(j):
+            age = _age_seconds(j.get("updated_at")) or 0
+            reason = (f"No heartbeat/log for {age // 60} min while status is '{status}'. "
+                      "The worker may have been interrupted; check the log tail.")
+        if reason:
+            problems.append({
+                "id": j.get("id"), "status": status, "reason": str(reason)[:400],
+                "updated_at": j.get("updated_at"), "last_log": (j.get("log") or [])[-1:] or [""],
+            })
+    return problems[:12]
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -164,6 +207,9 @@ def jobs_json(_=Depends(require_auth)):
             "updated_at": j.get("updated_at"),
             "created_at": j.get("created_at"),
             "error": j.get("error"),
+            "stalled": _is_stalled(j),
+            "progress": (j.get("result") or {}).get("progress") or {},
+            "diagnosis": (j.get("result") or {}).get("last_problem") or "",
             "topic": (j.get("payload") or {}).get("topic") or (j.get("payload") or {}).get("prompt") or "",
             "last_log": (j.get("log") or [""])[-1],
         })
@@ -288,8 +334,11 @@ def queue_remove(item_id: str, _=Depends(require_auth)):
 
 @app.get("/api/dashboard")
 def dashboard_json(_=Depends(require_auth)):
+    jobs = store.list(500)
     return JSONResponse({
-        "jobs": _job_stats(store.list(500)),
+        "jobs": _job_stats(jobs),
+        "problems": _job_problems(jobs),
+        "llm": llm_stats.snapshot(),
         "queue": scheduler.status(),
         "settings": settings_lib.view(),
         "system": {
@@ -300,6 +349,15 @@ def dashboard_json(_=Depends(require_auth)):
             "disk_total_gb": round(shutil.disk_usage(DATA_DIR).total / 1e9, 1),
             "data_dir": str(DATA_DIR),
         },
+    })
+
+
+@app.get("/api/llm")
+def llm_json(_=Depends(require_auth)):
+    return JSONResponse({
+        "stats": llm_stats.snapshot(),
+        "configured": settings_lib.groq_keys(),
+        "model": settings_lib.view().get("model"),
     })
 
 

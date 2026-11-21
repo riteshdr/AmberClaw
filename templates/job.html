@@ -47,7 +47,7 @@
       <div id="last-log" class="mono" style="font-size:13px; line-height:1.4">{{ ((job.log or ['(no logs yet)'])[-1]) }}</div>
     </div>
 
-    {% if job.error %}<p style="color:#fca5a5"><b>Error:</b> <span id="err">{{ job.error }}</span></p>{% endif %}
+    <p id="error-wrap" style="color:#fca5a5; display:{{ 'block' if job.error else 'none' }}"><b>Reason:</b> <span id="err">{{ job.error or '' }}</span></p>
 
     <div class="card">
       <h3 style="margin-top:0">Input</h3>
@@ -107,8 +107,20 @@
   <script>
     const jobId = document.body.dataset.jobId;
     const terminal = new Set(['succeeded','failed','needs_attention']);
-    function esc(s){ return (s||''); }
+    function esc(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
     function parseIso(iso){ if(!iso) return NaN; return new Date(iso.replace(' ', 'T').replace(/Z?$/, 'Z')).getTime(); }
+    function progressFromLog(log){
+      const seen = {};
+      log.forEach(l => {
+        let m = l.match(/(?:\[\d+:\d+\]\s*)?(.+?):\s*heard\s+(\d+)\s*\/\s*(\d+)/);
+        if(m){ seen[m[1].trim()] = `${m[2]}/${m[3]} blocks`; return; }
+        m = l.match(/(?:\[\d+:\d+\]\s*)?(.+?):\s*(downloading the audio|audio ready|rendering|cutting)/);
+        if(m && !seen[m[1].trim()]) seen[m[1].trim()] = m[2];
+      });
+      const parts = Object.keys(seen).map(k => `${k}: ${seen[k]}`);
+      const problem = [...log].reverse().find(l => /^\s*(?:\[\d+:\d+\]\s*)?x\s+/.test(l) || /error|failed|not a bot|age-restricted/i.test(l));
+      return {parts, problem: problem ? problem.replace(/^\s*(?:\[\d+:\d+\]\s*)?x\s+/, '') : ''};
+    }
     function agoText(iso){
       const t = parseIso(iso); if(isNaN(t)) return '';
       const s = Math.max(0, Math.floor((Date.now()-t)/1000));
@@ -116,30 +128,43 @@
       if(s < 3600) return `(last activity ${Math.floor(s/60)}m ${s%60}s ago)`;
       return `(last activity ${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m ago)`;
     }
-    function updateBanner(status, updated){
+    function updateBanner(j){
       const b = document.getElementById('banner');
+      const status = j.status || '';
+      const updated = j.updated_at || '';
       const t = parseIso(updated);
-      const stale = ['running','queued'].includes(status) && !isNaN(t) && (Date.now()-t) > 180000;
+      const limit = status === 'running' ? 20*60*1000 : 5*60*1000;
+      const stale = ['running','queued'].includes(status) && !isNaN(t) && (Date.now()-t) > limit;
+      const p = progressFromLog(j.log || []);
+      const progress = p.parts.length ? `<br><span class="mono">Progress: ${esc(p.parts.join(' · '))}</span>` : '';
       document.getElementById('ago').textContent = agoText(updated);
       if(status === 'running' || status === 'queued'){
         b.style.display = 'block';
         if(stale){
           b.className = 'banner b-stale';
-          b.innerHTML = '⚠ <b>Stale / no heartbeat.</b> This job is marked ' + status + ' but there has been no log/update for over 3 minutes. It may have been interrupted (server restart/crash) and is likely <b>not processing now</b>. Check the log tail and resubmit if needed.';
+          b.innerHTML = `⚠ <b>Stuck / no heartbeat.</b> Marked ${esc(status)} but no log for ` +
+            `${Math.floor((Date.now()-t)/60000)} min. The worker may have stopped (restart/crash) or is blocked.${progress}` +
+            (p.problem ? `<br><span class="stale">Last problem: ${esc(p.problem)}</span>` : '');
         } else {
           b.className = 'banner b-run';
-          b.innerHTML = '<span class="dot run"></span><b>Processing.</b> Worker is active (recent heartbeat/log updates). This page polls every 3s; long steps (download/transcribe/render) can take time with sparse log updates.';
+          b.innerHTML = '<span class="dot run"></span><b>Processing.</b> Worker is active. ' +
+            'Long download/transcribe/render steps can take minutes between log lines.' + progress;
         }
       } else if(status === 'succeeded'){
-        b.style.display = 'block'; b.className = 'banner b-ok'; b.textContent = 'Completed successfully.';
+        b.style.display = 'block'; b.className = 'banner b-ok';
+        b.innerHTML = 'Completed successfully.' + progress;
       } else if(status === 'failed' || status === 'needs_attention'){
-        b.style.display = 'block'; b.className = 'banner b-bad'; b.textContent = (status === 'failed') ? 'Job failed. See error/log below.' : 'Job needs attention (see error/log below).';
+        b.style.display = 'block'; b.className = 'banner b-bad';
+        const reason = j.error || p.problem || 'No error message was recorded.';
+        b.innerHTML = `<b>${status === 'failed' ? 'Job failed' : 'Job needs attention'}.</b> ` +
+          `<span class="stale">Reason: ${esc(reason)}</span>` + progress;
       } else {
         b.style.display = 'none';
       }
       return stale;
     }
-    updateBanner(document.body.dataset.status, document.body.dataset.updated);
+    updateBanner({status: document.body.dataset.status, updated_at: document.body.dataset.updated,
+                  log: {{ (job.log or []) | tojson }}});
 
     async function poll(){
       const status = document.body.dataset.status;
@@ -155,8 +180,9 @@
         const log = (j.log || []);
         document.getElementById('log').textContent = log.join('\n');
         document.getElementById('last-log').textContent = log.length ? log[log.length-1] : '(no logs yet)';
-        if (j.error) { const e = document.getElementById('err'); if(e) e.textContent = j.error; }
-        updateBanner(j.status, j.updated_at);
+        const wrap = document.getElementById('error-wrap');
+        if (j.error && wrap) { wrap.style.display = 'block'; document.getElementById('err').textContent = j.error; }
+        updateBanner(j);
         if (terminal.has(j.status)) { setTimeout(()=>location.reload(), 600); return; }
       } catch(e){}
     }

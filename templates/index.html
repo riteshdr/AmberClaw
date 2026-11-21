@@ -45,7 +45,16 @@
     .filters button.active { background:var(--accent); color:#1a1406; border-color:var(--accent); font-weight:700; }
     .keyrow { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--line); font-size:12px; }
     .footer-note { margin-top:16px; text-align:center; color:var(--muted); font-size:11px; }
-    @media (max-width: 1000px){ .grid{ grid-template-columns:1fr; } .stats{ grid-template-columns:repeat(3,1fr); } }
+    .monitor-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .monitor-box { background:#10141b; border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .monitor-box b { font-size:13px; }
+    .bar { height:8px; background:#20283a; border-radius:999px; overflow:hidden; margin:8px 0; }
+    .bar > span { display:block; height:100%; width:0; background:var(--ok); transition:width .3s; }
+    .bar.warn > span { background:var(--warn); } .bar.bad > span { background:var(--bad); }
+    .errline { color:#fca5a5; font-size:11px; margin-top:6px; word-break:break-word; line-height:1.35; }
+    .okline { color:#86efac; }
+    .problem { border-top:1px solid var(--line); padding-top:6px; margin-top:6px; font-size:11px; }
+    @media (max-width: 1000px){ .grid{ grid-template-columns:1fr; } .stats{ grid-template-columns:repeat(3,1fr); } .monitor-grid{ grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -60,6 +69,28 @@
       <div class="stat"><div class="num" id="st-done">–</div><div class="lbl">Done</div></div>
       <div class="stat"><div class="num" id="st-failed">–</div><div class="lbl">Failed</div></div>
       <div class="stat"><div class="num" id="st-clips">–</div><div class="lbl">Clips generated</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="topbar"><h2>Live monitor</h2><div class="small" id="monitor-updated">loading…</div></div>
+      <div class="monitor-grid">
+        <div class="monitor-box">
+          <div class="topbar"><b><span class="dot" id="llm-dot"></span>LLM / Groq</b><span class="small" id="llm-model">–</span></div>
+          <div class="small" id="llm-summary">Loading LLM status…</div>
+          <div class="errline" id="llm-error" style="display:none"></div>
+        </div>
+        <div class="monitor-box">
+          <div class="topbar"><b><span class="dot" id="quota-dot"></span>YouTube quota</b><span class="small" id="quota-day">–</span></div>
+          <div class="small" id="quota-summary">Loading quota status…</div>
+          <div class="bar" id="quota-bar"><span id="quota-fill"></span></div>
+          <div class="errline" id="quota-error" style="display:none"></div>
+        </div>
+        <div class="monitor-box">
+          <div class="topbar"><b><span class="dot" id="health-dot"></span>Job health</b><span class="small" id="health-count">–</span></div>
+          <div class="small" id="health-summary">Loading job health…</div>
+          <div id="health-problems"></div>
+        </div>
+      </div>
     </div>
 
     <div class="grid">
@@ -180,19 +211,31 @@
   <script>
     const PRESETS = {{ presets | tojson }};
     function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function isoMs(iso){
+      if(!iso) return NaN;
+      return new Date(iso.replace(' ', 'T').replace(/Z?$/, 'Z')).getTime();
+    }
     function ago(iso){
-      if(!iso) return '';
-      const t = new Date(iso.replace(' ', 'T').replace(/Z?$/, 'Z')).getTime();
-      if(isNaN(t)) return iso;
+      const t = isoMs(iso);
+      if(isNaN(t)) return '';
       const s = Math.max(0, Math.floor((Date.now()-t)/1000));
       if(s < 60) return s + 's ago';
       if(s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's ago';
       return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm ago';
     }
+    function until(iso){
+      const t = isoMs(iso);
+      if(isNaN(t)) return '';
+      const s = Math.max(0, Math.floor((t-Date.now())/1000));
+      if(s < 60) return s + 's';
+      if(s < 3600) return Math.floor(s/60) + 'm';
+      return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+    }
     function isStale(j){
       if(!['running','queued'].includes(j.status) || !j.updated_at) return false;
-      const t = new Date(j.updated_at.replace(' ', 'T').replace(/Z?$/, 'Z')).getTime();
-      return !isNaN(t) && (Date.now()-t) > 180000;
+      const t = isoMs(j.updated_at);
+      const limit = j.status === 'running' ? 20*60*1000 : 5*60*1000;
+      return !isNaN(t) && (Date.now()-t) > limit;
     }
     function dotClass(j){
       if(isStale(j)) return 'warn';
@@ -228,7 +271,7 @@
       body.innerHTML = jobs.map(j => {
         const stale = isStale(j);
         const last = (j.last_log || '').slice(0, 90);
-        const act = `${esc(j.updated_at||'')}<br><span class="small">(${ago(j.updated_at)})</span>${stale ? '<br><span class="stale">⚠ stale / no heartbeat</span>' : ''}${last ? `<br><span class="mono small">${esc(last)}</span>` : ''}`;
+        const act = `${esc(j.updated_at||'')}<br><span class="small">(${ago(j.updated_at)})</span>${stale ? '<br><span class="stale">⚠ stuck / no heartbeat</span>' : ''}${j.error ? `<br><span class="stale" title="${esc(j.error)}">reason: ${esc((j.error||'').slice(0,90))}</span>` : ''}${last ? `<br><span class="mono small">${esc(last)}</span>` : ''}`;
         const label = j.status === 'running' ? 'processing' : j.status;
         return `<tr>
           <td><a href="/jobs/${esc(j.id)}">${esc(j.id)}</a></td>
@@ -243,6 +286,59 @@
         const r = await fetch('/api/jobs', {cache:'no-store'});
         if(r.ok){ jobCache = (await r.json()).jobs || []; renderJobs(); }
       }catch(e){}
+    }
+
+    // ----- live monitor -----
+    function setDot(id, cls){ const el = document.getElementById(id); if(el) el.className = 'dot ' + (cls||''); }
+    function renderMonitor(d){
+      const jobs = d.jobs || {}, q = d.queue || {}, s = d.settings || {};
+      const g = ((d.llm || {}).providers || {}).groq || {};
+      const today = g.today || {};
+      const configured = s.groq ? (s.groq.count || 0) : 0;
+      const model = s.model || Object.keys(g.models || {})[0] || '-';
+      const errMs = isoMs(g.last_error_at), okMs = isoMs(g.last_success);
+      const recentErr = !isNaN(errMs) && (isNaN(okMs) || errMs > okMs);
+      const llmState = configured === 0 ? 'bad' : recentErr ? 'warn' : (today.calls ? 'ok' : '');
+      setDot('llm-dot', llmState);
+      document.getElementById('llm-model').textContent = model;
+      document.getElementById('llm-summary').innerHTML =
+        `keys <b>${configured}</b> · today <b>${today.calls||0}</b> calls ` +
+        `(<span class="okline">${today.success||0} ok</span>, <span class="stale">${today.errors||0} err</span>) ` +
+        `· 429s <b>${today.rate_limits||0}</b> · all-time ${g.calls||0}`;
+      const lerr = document.getElementById('llm-error');
+      if(g.last_error){ lerr.style.display = 'block'; lerr.textContent = `Last error (${ago(g.last_error_at)}): ${g.last_error}`; }
+      else { lerr.style.display = 'none'; }
+
+      const used = q.uploaded_today || 0, limit = q.daily_limit || 0;
+      const remaining = (q.remaining !== undefined) ? q.remaining : Math.max(0, limit - used);
+      const pct = limit ? Math.min(100, Math.round(used / limit * 100)) : 0;
+      document.getElementById('quota-fill').style.width = pct + '%';
+      document.getElementById('quota-bar').className = 'bar' + (remaining <= 0 ? ' bad' : remaining <= 1 ? ' warn' : '');
+      setDot('quota-dot', !q.alive ? 'warn' : remaining <= 0 ? 'bad' : 'ok');
+      document.getElementById('quota-day').textContent = q.quota_day || '';
+      document.getElementById('quota-summary').innerHTML =
+        `${q.alive ? 'Scheduler running' : '<span class="stale">Scheduler stopped</span>'} ` +
+        `· <b>${used}/${limit}</b> used · <b>${remaining}</b> left · resets in ` +
+        `<b>${until(q.quota_reset_at)}</b> (Pacific) · last tick ${ago(q.last_tick) || 'never'}`;
+      const qerrs = [];
+      if(q.last_error) qerrs.push('tick: ' + q.last_error);
+      (q.failures || []).slice(0,2).forEach(f => qerrs.push(`${f.file||'clip'}: ${f.error||'upload failed'}`));
+      (q.uploading || []).filter(u => (u.age_seconds||0) > 1800).slice(0,1)
+        .forEach(u => qerrs.push(`stuck upload ${u.file||''} (${ago(u.updated_at)})`));
+      const qerr = document.getElementById('quota-error');
+      if(qerrs.length){ qerr.style.display = 'block'; qerr.textContent = qerrs.join(' | '); }
+      else { qerr.style.display = 'none'; }
+
+      const problems = d.problems || [];
+      setDot('health-dot', problems.length ? 'warn' : 'ok');
+      document.getElementById('health-count').textContent = `${jobs.running||0} running · ${jobs.stuck||0} stuck`;
+      document.getElementById('health-summary').textContent = `${jobs.failed||0} failed · ${jobs.clips||0} clips generated`;
+      document.getElementById('health-problems').innerHTML = problems.length
+        ? problems.slice(0,4).map(p =>
+            `<div class="problem"><a href="/jobs/${esc(p.id)}">${esc(p.id)}</a> ` +
+            `<span class="pill s-${esc(p.status)}">${esc(p.status)}</span><br>${esc(p.reason)}</div>`).join('')
+        : '<div class="okline">No failed or stuck jobs.</div>';
+      document.getElementById('monitor-updated').textContent = 'updated ' + new Date().toLocaleTimeString();
     }
 
     // ----- dashboard stats -----
@@ -260,6 +356,7 @@
         document.getElementById('st-clips').textContent = j.clips ?? 0;
         document.getElementById('system-note').textContent =
           `System: ${s.ok ? 'online' : 'offline'} • Python ${s.python||'?'} • disk free ${s.disk_free_gb??'?'} GB / ${s.disk_total_gb??'?'} GB`;
+        renderMonitor(d);
         renderSettings(d.settings);
       }catch(e){}
     }
@@ -290,9 +387,11 @@
         `<b>${s.alive ? 'Scheduler running' : 'Scheduler stopped'}</b> ` +
         `· quota day <span class="mono">${esc(s.quota_day||'')}</span> ` +
         `· uploaded today <b>${s.uploaded_today||0}/${s.daily_limit||0}</b> ` +
-        `· <b>${left}</b> slot(s) left · pending <b>${c.pending||0}</b> ` +
+        `· <b>${left}</b> slot(s) left · resets in <b>${until(s.quota_reset_at)}</b> (Pacific) ` +
+        `· pending <b>${c.pending||0}</b> · uploading <b>${c.uploading||0}</b> ` +
         `· uploaded <b>${c.uploaded||0}</b> · failed <b>${c.failed||0}</b>` +
-        (s.paused ? ' · <span class="stale">PAUSED</span>' : '');
+        (s.paused ? ' · <span class="stale">PAUSED</span>' : '') +
+        (s.last_error ? `<br><span class="stale">last tick error: ${esc(s.last_error)}</span>` : '');
       document.getElementById('queue-logs').innerHTML = (s.logs||[]).slice(0,6).map(x => esc(x)).join('<br>') || 'No scheduler activity yet.';
       const body = document.getElementById('queue-body');
       const items = data.items || [];
@@ -301,7 +400,7 @@
         const st = i.status || 'pending';
         const pill = st==='uploaded' ? 's-uploaded' : st==='failed' ? 's-failed' : st==='uploading' ? 's-uploading' : 's-queued';
         const link = i.url ? `<a href="${esc(i.url)}" target="_blank">watch</a>` : '';
-        const err = i.error ? `<br><span class="stale" title="${esc(i.error)}">error</span>` : '';
+        const err = i.error ? `<br><span class="stale" title="${esc(i.error)}">${esc(i.error.slice(0,110))}</span>` : '';
         const action = st==='failed'
           ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/retry',{})">retry</button> `
           : st==='pending'
