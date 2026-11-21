@@ -100,6 +100,27 @@ class UploadQueue:
             return st
         return self._mutate(fn)
 
+    def set_upload_cooldown(self, hours=24):
+        """YouTube rejected uploads at the account level; back off for a rolling day."""
+        def fn(data):
+            st = data.setdefault("state", {})
+            until = time.time() + max(1, int(hours)) * 3600
+            st["cooldown_until"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(until))
+            return st
+        return self._mutate(fn)
+
+    def cooldown_remaining(self):
+        """Seconds left on a YouTube-side upload cooldown (0 when none)."""
+        st = self.state()
+        until = st.get("cooldown_until")
+        if not until:
+            return 0
+        try:
+            t = calendar.timegm(time.strptime(str(until), "%Y-%m-%dT%H:%M:%SZ"))
+        except Exception:
+            return 0
+        return max(0, int(t - time.time()))
+
     # ---------- queue contents ----------
 
     def counts(self):

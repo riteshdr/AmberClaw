@@ -354,10 +354,15 @@
       document.getElementById('quota-bar').className = 'bar' + (remaining <= 0 ? ' bad' : remaining <= 1 ? ' warn' : '');
       setDot('quota-dot', !q.alive ? 'warn' : remaining <= 0 ? 'bad' : 'ok');
       document.getElementById('quota-day').textContent = q.quota_day || '';
+      let cooldownNote = '';
+      if(q.cooldown_remaining > 0){
+        const h = Math.floor(q.cooldown_remaining / 3600), m = Math.floor((q.cooldown_remaining % 3600) / 60);
+        cooldownNote = ` · <span class="stale">YouTube limit: cooldown ${h}h ${m}m left</span>`;
+      }
       document.getElementById('quota-summary').innerHTML =
         `${q.alive ? 'Scheduler running' : '<span class="stale">Scheduler stopped</span>'} ` +
         `· <b>${used}/${limit}</b> used · <b>${remaining}</b> left · resets in ` +
-        `<b>${until(q.quota_reset_at)}</b> (Pacific) · last tick ${ago(q.last_tick) || 'never'}`;
+        `<b>${until(q.quota_reset_at)}</b> (Pacific) · last tick ${ago(q.last_tick) || 'never'}` + cooldownNote;
       const qerrs = [];
       if(q.last_error) qerrs.push('tick: ' + q.last_error);
       (q.failures || []).slice(0,2).forEach(f => qerrs.push(`${f.file||'clip'}: ${f.error||'upload failed'}`));
@@ -430,7 +435,7 @@
       const s = data.status || {}, c = s.counts || {};
       const left = Math.max(0, (s.daily_limit||0) - (s.uploaded_today||0));
       const head = JSON.stringify([s.alive, s.quota_day, s.uploaded_today, s.daily_limit,
-        s.quota_reset_at, c.pending, c.uploading, c.uploaded, c.failed, s.paused, s.last_error, s.logs]);
+        s.quota_reset_at, s.cooldown_until, c.pending, c.uploading, c.uploaded, c.failed, s.paused, s.last_error, s.logs]);
       if(head !== queueHeadSig){
         queueHeadSig = head;
         document.getElementById('queue-summary').innerHTML =

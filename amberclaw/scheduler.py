@@ -140,6 +140,8 @@ class UploadScheduler:
             "last_tick": st.get("last_tick"),
             "last_tick_age_seconds": _age_seconds(st.get("last_tick")),
             "last_error": st.get("last_error"),
+            "cooldown_until": st.get("cooldown_until"),
+            "cooldown_remaining": self.queue.cooldown_remaining(),
             "counts": counts,
             "failures": [{
                 "id": i.get("id"), "file": i.get("file"), "error": i.get("error"),
@@ -164,6 +166,13 @@ class UploadScheduler:
             recovered = self.queue.reset_stale()
             if recovered:
                 self._log(f"[scheduler] recovered {recovered} interrupted upload(s)")
+
+            cooldown = self.queue.cooldown_remaining()
+            if cooldown > 0:
+                self.queue.touch_tick()
+                self._log(f"[scheduler] YouTube account limit active; cooldown {cooldown // 3600}h {(cooldown % 3600) // 60}m left")
+                result["reason"] = "youtube_cooldown"
+                return result
 
             if self.queue.is_paused() and not force:
                 self.queue.touch_tick()
@@ -252,6 +261,10 @@ class UploadScheduler:
                     result["failed"] += 1
                     line = f"[scheduler] upload failed for {it.get('file')}: {e}"
                     self._log(line)
+                    if "uploadLimitExceeded" in str(e):
+                        self.queue.set_upload_cooldown(24)
+                        self._log("[scheduler] YouTube account upload limit hit; backing off for 24h. "
+                                  "Verify the channel's phone number or wait for the rolling window to clear.")
                     if self.store and it.get("job_id"):
                         self.store.append_log(it["job_id"], line)
 
