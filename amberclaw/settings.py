@@ -9,9 +9,13 @@ import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ENV_PATH = ROOT / ".env"
 _lock = threading.Lock()
 _LINE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
+
+
+def env_path():
+    """Resolve lazily so .env-loaded values (e.g. in Docker) are visible."""
+    return Path(os.environ.get("AMBERCLAW_ENV_FILE") or (ROOT / ".env"))
 
 
 def _split_keys(value):
@@ -19,10 +23,11 @@ def _split_keys(value):
 
 
 def read_raw():
-    if not ENV_PATH.exists():
+    path = env_path()
+    if not path.exists():
         return {}
     out = {}
-    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         m = _LINE.match(line)
         if m:
             out[m.group(1)] = m.group(2)
@@ -32,7 +37,8 @@ def read_raw():
 def write_values(values: dict):
     """Atomically update/add keys in .env and apply them to this process."""
     with _lock:
-        lines = ENV_PATH.read_text(encoding="utf-8").splitlines() if ENV_PATH.exists() else ["# AmberClaw configuration"]
+        path = env_path()
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else ["# AmberClaw configuration"]
         seen = set()
         out = []
         for line in lines:
@@ -46,9 +52,9 @@ def write_values(values: dict):
         for key, val in values.items():
             if key not in seen:
                 out.append(f"{key}={val}")
-        tmp = ENV_PATH.parent / ".env.tmp"
+        tmp = path.parent / ".env.tmp"
         tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
-        os.replace(tmp, ENV_PATH)
+        os.replace(tmp, path)
         for key, val in values.items():
             os.environ[key] = val
 
@@ -103,8 +109,8 @@ def view():
         "brain": get("STREAMCLIPS_BRAIN", "groq"),
         "model": get("GROQ_MODEL", "openai/gpt-oss-20b"),
         "scheduler_enabled": get("UPLOAD_SCHEDULER_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"},
-        "env_path": str(ENV_PATH),
-        "env_exists": ENV_PATH.exists(),
+        "env_path": str(env_path()),
+        "env_exists": env_path().exists(),
     }
 
 

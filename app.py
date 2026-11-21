@@ -21,6 +21,11 @@ from amberclaw.store import JobStore
 from amberclaw.uploader import UploadError, upload_clips_from_dir
 
 load_dotenv()
+# In containers the dashboard-managed .env lives on the persistent volume.
+# Load it last so keys added from the UI survive restarts.
+_persist_env = os.environ.get("AMBERCLAW_ENV_FILE")
+if _persist_env:
+    load_dotenv(_persist_env, override=True)
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("AMBERCLAW_DATA_DIR", BASE_DIR / "data")).resolve()

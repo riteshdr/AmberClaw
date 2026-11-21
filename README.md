@@ -6,7 +6,7 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 
 ## What it does
 
-- **Web UI** (`/`) to submit a daily prompt: topic/search (e.g. "Valorant clutch moments") and/or specific stream/VOD URLs, focus, clip count, search window, language, etc.
+- **Web UI / control dashboard** (`/`): preset templates that fill the job form, live job status (queued / processing / done / failed) with filters, stats cards, disk/system health, the daily upload queue with controls, and settings/secret management. Groq keys can be added from the UI and are written only to `.env` (masked in the UI, never logged or committed).
 - Runs `stream-clips` in the background as a job and shows live logs/status.
 - Collects generated outputs (`clips.json`, `POSTING.md`, `.mp4` clips) from the stream-clips output folder.
 - **YouTube upload** (manual per job or auto-upload): uploads generated clips with title/description/tags that include credit to the original creator and source URL.
@@ -109,6 +109,7 @@ Environment options:
 | `YOUTUBE_DAILY_UPLOAD_LIMIT` | `6` | Max successful uploads per quota day (set higher after quota approval) |
 | `UPLOAD_QUEUE_PATH` | `<DATA_DIR>/jobs/upload_queue.json` | Queue state file |
 | `UPLOAD_DRY_RUN` | `false` | Log what would be uploaded without spending quota |
+| `AMBERCLAW_ENV_FILE` | `./.env` | Path the dashboard writes secrets to; point at a mounted volume in Docker |
 
 For external cron / Windows Task Scheduler, run one batch and exit:
 

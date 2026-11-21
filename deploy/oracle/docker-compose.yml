@@ -12,6 +12,8 @@ services:
       PORT: "10000"
       AMBERCLAW_DATA_DIR: /data
       STREAMCLIPS_HOME: /data/StreamClips
+      # Secrets added from the dashboard are written here, on the persistent volume.
+      AMBERCLAW_ENV_FILE: /data/.env
     ports:
       - "10000:10000"
     volumes:
