@@ -155,7 +155,8 @@
         b.innerHTML = 'Completed successfully.' + progress;
       } else if(status === 'failed' || status === 'needs_attention'){
         b.style.display = 'block'; b.className = 'banner b-bad';
-        const reason = j.error || p.problem || 'No error message was recorded.';
+        let reason = j.error || p.problem || 'No error message was recorded.';
+        reason = reason.replace(/^Reason:\s*/i, '').replace(/\.\s*Reason:\s*/g, '. ');
         b.innerHTML = `<b>${status === 'failed' ? 'Job failed' : 'Job needs attention'}.</b> ` +
           `<span class="stale">Reason: ${esc(reason)}</span>` + progress;
       } else {
