@@ -35,9 +35,33 @@ done
 echo "==> Installing Docker + utilities"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq docker.io docker-compose-plugin git curl ca-certificates openssl >/dev/null
+apt-get install -y -qq docker.io git curl ca-certificates openssl >/dev/null
 systemctl enable --now docker
 id -nG "$TARGET_USER" | grep -qw docker || usermod -aG docker "$TARGET_USER"
+
+# Newer Ubuntu releases (e.g. 26.04) no longer ship docker-compose-plugin in their repos.
+# Install Compose and Buildx as standalone CLI plugins so the runbook works on any version.
+if ! docker compose version >/dev/null 2>&1; then
+  echo "==> Installing Docker Compose plugin (standalone binary)"
+  arch="$(dpkg --print-architecture)"
+  case "$arch" in
+    amd64) compose_arch="x86_64" ;;
+    arm64) compose_arch="aarch64" ;;
+    *) echo "ERROR: unsupported architecture $arch" >&2; exit 1 ;;
+  esac
+  install -d -m 0755 /usr/local/lib/docker/cli-plugins
+  curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${compose_arch}" \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose
+  chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+fi
+if ! docker buildx version >/dev/null 2>&1; then
+  echo "==> Installing Docker Buildx plugin (standalone binary)"
+  arch="$(dpkg --print-architecture)"
+  curl -fsSL "https://github.com/docker/buildx/releases/latest/download/buildx-linux-${arch}" \
+    -o /usr/local/lib/docker/cli-plugins/docker-buildx
+  chmod 0755 /usr/local/lib/docker/cli-plugins/docker-buildx
+fi
+docker compose version
 
 echo "==> Preparing persistent data directory"
 mkdir -p "$DATA_DIR"
