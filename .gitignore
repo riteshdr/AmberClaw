@@ -22,3 +22,4 @@ stream-clips.zip
 *.wav
 *.part
 *.ytdl
+.opencode/
