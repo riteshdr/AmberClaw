@@ -136,6 +136,12 @@ icacls $KEY /inheritance:r
 icacls $KEY /grant:r "$($env:USERNAME):F"
 
 scp -i $KEY .env client_secrets.json token.json ubuntu@$IP:/tmp/
+
+# YouTube cookies (REQUIRED on AWS/EC2): YouTube flags datacenter IPs as bots.
+# Install the "Get cookies.txt LOCALLY" Brave/Chrome extension, open youtube.com
+# while signed in, click the extension -> Export, then save the file.
+scp -i $KEY "C:\Users\<you>\Downloads\www.youtube.com_cookies.txt" ubuntu@$IP:/tmp/youtube_cookies.txt
+
 ssh -i $KEY ubuntu@$IP
 ```
 
@@ -158,6 +164,7 @@ sudo git clone https://github.com/riteshdr/AmberClaw.git /opt/amberclaw
 sudo install -m 600 /tmp/.env                /opt/amberclaw/.env
 sudo install -m 600 /tmp/client_secrets.json /opt/amberclaw/client_secrets.json
 sudo install -m 600 /tmp/token.json          /opt/amberclaw/token.json
+sudo install -m 600 -o root -g root /tmp/youtube_cookies.txt /var/lib/amberclaw/youtube_cookies.txt
 ```
 
 ```bash
@@ -255,6 +262,10 @@ Create budget** → Cost budget, monthly, **USD 100**, add your email for an ale
 - **Jobs fail with "stream-clips is not set up yet"** → the private venv is missing; rebuild:
   `docker compose -f deploy/aws/docker-compose.yml up -d --build`.
 - **Build fails in `setup_env.py`** → check disk (`df -h /`) and network to PyPI/HuggingFace.
+- **Jobs fail with "YouTube needs a login" / "not a bot"** → the cookie file is missing or expired.
+  Re-export youtube.com cookies with the browser extension and reinstall:
+  `sudo install -m 600 -o root -g root /tmp/youtube_cookies.txt /var/lib/amberclaw/youtube_cookies.txt`
+  then restart: `docker compose -f deploy/aws/docker-compose.yml restart`.
 - **Queue not uploading** → check *quota day* / *uploaded today* on the dashboard; free YouTube
   quota allows ~6 uploads/day.
 - **Windows paths in jobs** → the AWS compose file overrides `STREAMCLIPS_PYTHON`,
