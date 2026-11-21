@@ -263,6 +263,35 @@ def download(path: str, _=Depends(require_auth)):
     return FileResponse(str(target), filename=target.name)
 
 
+@app.get("/media")
+def media(path: str, _=Depends(require_auth)):
+    """Serve a generated clip inline so the browser's <video> player can stream it.
+
+    FileResponse supports HTTP Range requests, so seeking works on large clips.
+    """
+    target = _safe_data_path(path)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    media_type = {
+        ".mp4": "video/mp4", ".webm": "video/webm", ".mkv": "video/x-matroska",
+        ".mov": "video/quicktime", ".m4v": "video/x-m4v",
+    }.get(target.suffix.lower(), "application/octet-stream")
+    return FileResponse(str(target), media_type=media_type)
+
+
+@app.get("/view", response_class=HTMLResponse)
+def view_clip(request: Request, path: str, title: str = "", _=Depends(require_auth)):
+    target = _safe_data_path(path)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return templates.TemplateResponse("view.html", {
+        "request": request,
+        "title": (title or "").strip() or target.name,
+        "name": target.name,
+        "path": path,
+    })
+
+
 @app.get("/health")
 def health():
     return {"ok": True}

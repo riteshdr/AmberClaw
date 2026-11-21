@@ -401,10 +401,14 @@
         const pill = st==='uploaded' ? 's-uploaded' : st==='failed' ? 's-failed' : st==='uploading' ? 's-uploading' : 's-queued';
         const link = i.url ? `<a href="${esc(i.url)}" target="_blank">watch</a>` : '';
         const err = i.error ? `<br><span class="stale" title="${esc(i.error)}">${esc(i.error.slice(0,110))}</span>` : '';
-        const action = st==='failed'
+        const viewPath = encodeURIComponent((i.outdir||'') + '/' + (i.file||''));
+        const viewTitle = encodeURIComponent(i.meta_title || i.title || i.file || 'Clip');
+        const view = `<a class="btn small" style="display:inline-block;text-decoration:none" ` +
+          `href="/view?path=${viewPath}&title=${viewTitle}" target="_blank">view</a> `;
+        const action = view + (st==='failed'
           ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/retry',{})">retry</button> `
           : st==='pending'
-          ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/remove',{})">remove</button> ` : '';
+          ? `<button class="btn small secondary" onclick="postForm('/api/queue/item/${esc(i.id)}/remove',{})">remove</button> ` : '');
         return `<tr>
           <td class="small mono">${esc(i.file)}<br><span class="small">${esc((i.meta_title||'').slice(0,44))}</span></td>
           <td class="small">${esc((i.topic||'') + ' / ' + (i.creator||''))}</td>

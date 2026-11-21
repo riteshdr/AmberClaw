@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }} - AmberClaw</title>
+  <style>
+    :root { --bg:#0b0d10; --panel:#151922; --text:#e8edf2; --muted:#98a2b3; --accent:#ffbf3c; --line:#273043; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, Arial, sans-serif; background:#0b0d10; color:var(--text); }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 24px; }
+    a { color:#ffd37a; text-decoration:none; } a:hover { text-decoration:underline; }
+    h1 { font-size:20px; margin:8px 0 4px; }
+    .muted { color:var(--muted); font-size:13px; }
+    .player { background:#000; border:1px solid var(--line); border-radius:14px; overflow:hidden; margin:16px 0; }
+    video { display:block; width:100%; max-height:75vh; background:#000; }
+    .btn { display:inline-block; background:var(--accent); color:#1a1406; border:none; padding:9px 12px;
+           border-radius:10px; font-weight:700; cursor:pointer; text-decoration:none; }
+    .btn.secondary { background:#2b3445; color:#e8edf2; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p><a href="/">&larr; Back to AmberClaw</a></p>
+    <h1>{{ title }}</h1>
+    <div class="muted mono">{{ name }}</div>
+
+    <div class="player">
+      <video controls playsinline preload="metadata" src="/media?path={{ path | urlencode }}">
+        Your browser does not support HTML5 video.
+      </video>
+    </div>
+
+    <div class="row">
+      <a class="btn" href="/download?path={{ path | urlencode }}">Download</a>
+      <a class="btn secondary" href="javascript:history.back()">Back</a>
+    </div>
+  </div>
+</body>
+</html>
