@@ -303,6 +303,19 @@ class UploadQueue:
             return None
         return self._mutate(fn)
 
+    def retry_rate_limited(self):
+        """Auto-requeue items rejected by YouTube's account limit once cooldown clears."""
+        def fn(d):
+            n = 0
+            for it in d.get("items", []):
+                if it.get("status") == "failed" and "uploadLimitExceeded" in str(it.get("error") or ""):
+                    it["status"] = "pending"
+                    it["updated_at"] = _now()
+                    it["error"] = None
+                    n += 1
+            return n
+        return self._mutate(fn)
+
     def is_cancel_requested(self, item_id):
         with _lock:
             for it in self._read().get("items", []):

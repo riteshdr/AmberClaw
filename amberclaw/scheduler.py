@@ -174,6 +174,12 @@ class UploadScheduler:
                 result["reason"] = "youtube_cooldown"
                 return result
 
+            # Cooldown cleared: automatically retry anything that failed only
+            # because of the YouTube account-level limit. No manual retry needed.
+            requeued = self.queue.retry_rate_limited()
+            if requeued:
+                self._log(f"[scheduler] cooldown cleared; auto-requeued {requeued} rate-limited clip(s)")
+
             if self.queue.is_paused() and not force:
                 self.queue.touch_tick()
                 self._log("[scheduler] paused; no uploads this tick")
