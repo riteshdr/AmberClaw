@@ -111,6 +111,7 @@ Re-running the same command resumes. Finished steps are cached in `~/StreamClips
 **Language.** By default, the language is detected separately for each 10-minute block and
 each clip, so streamers who switch languages are handled.
 
+- **Allowed creators:** `allowed_languages` in settings.json defaults to `["en", "hi"]`. Streams whose dominant detected language is outside this list are skipped entirely, and transcript blocks in other languages are dropped so no clip is cut from them. Set it to `[]` to disable the filter. Forcing `--language` also bypasses it.
 - **Hinglish** (Hindi mixed with English): captions default to Roman script via `caption_language: "en"`, a Hinglish Whisper prompt and a Devanagari→Roman fallback. This is independent of `--language`, which controls the whole-stream scan — a Hindi stream scanned with `--language hi` still gets Roman captions. For Devanagari captions set `"caption_language": "hi"` in settings.json; set it to `""` to follow the detected language.
 - **Garbled transcript:** if the transcript in a prompt file looks garbled, the scan model is too small for that language. Set `"scan_model": "base"` in settings.json. It's about 2× slower but much more accurate for non-English speech. Caption accuracy is already improved by the default `"caption_model": "small"`.
 - **Quality:** output is always 1080x1920. `"video_height": 2160` fetches up to a 4K source before downscaling, and `crf: 18` / `x264_preset: "medium"` keep the encode crisp. Lower `video_height` to 1080 or use `x264_preset: "fast"` if your CPU is too slow.
