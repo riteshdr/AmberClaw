@@ -14,9 +14,14 @@ user is already signed in to, so it runs on their own subscription (no API keys)
 
 import json
 import os
+import random
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -112,9 +117,56 @@ def _call(cmd, stdin_text=None, cwd=None):
     return proc.stdout
 
 
+_API_LOCK = threading.Lock()
+_LAST_CALL = {"t": 0.0}
+_API_KEY_INDEX = 0
+_MIN_INTERVAL = 2.5  # seconds between API calls; avoids free-tier RPM/TPM bursts
+_MAX_RETRIES = 10
+
+
+def _api_key(key_name):
+    """Rotate through keys added from the dashboard (comma/newline separated in .env)."""
+    global _API_KEY_INDEX
+    raw = os.environ.get(key_name, "")
+    keys = [k.strip() for k in re.split(r"[\s,]+", str(raw)) if k.strip()]
+    if not keys:
+        raise Problem(f"{key_name} is not set")
+    with _API_LOCK:
+        key = keys[_API_KEY_INDEX % len(keys)]
+        _API_KEY_INDEX += 1
+    return key
+
+
+def _throttle():
+    """Serialize API calls so a batch of transcript parts cannot burst the free tier."""
+    with _API_LOCK:
+        wait = _MIN_INTERVAL - (time.monotonic() - _LAST_CALL["t"])
+        if wait > 0:
+            time.sleep(wait)
+        _LAST_CALL["t"] = time.monotonic()
+
+
+def _retry_delay(exc, raw):
+    headers = getattr(exc, "headers", None)
+    header = headers.get("Retry-After") if headers else None
+    if header:
+        try:
+            return min(90.0, float(header))
+        except (TypeError, ValueError):
+            pass
+    try:
+        obj = json.loads(raw)
+        err = obj.get("error", {}) if isinstance(obj, dict) else {}
+        value = err.get("retry_after") or obj.get("retry_after")
+        if value:
+            return min(90.0, float(value))
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return 2.0 + random.random() * 2.0
+
+
 def _ask_api(brain, key_name, base_name, default_base, model_name, default_model, prompt, model=None):
-    key = os.environ.get(key_name)
-    if not key:
+    if not os.environ.get(key_name):
         raise Problem(f"--brain {brain} requires {key_name} to be set.")
     base = os.environ.get(base_name, default_base).rstrip("/")
     model = model or os.environ.get(model_name) or default_model
@@ -125,20 +177,40 @@ def _ask_api(brain, key_name, base_name, default_base, model_name, default_model
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
+        # gpt-oss is a reasoning model: it spends tokens on hidden reasoning before
+        # emitting the JSON array. A small budget leaves the content empty.
+        "max_tokens": 2500,
     }
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        f"{base}/chat/completions", data=data,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-            body = json.loads(resp.read().decode("utf-8", "replace"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:400]
-        raise Problem(f"{brain} API failed ({exc.code}): {detail}") from exc
-    except Exception as exc:  # noqa: BLE001
-        raise Problem(f"{brain} API request failed: {exc}") from exc
+    for attempt in range(_MAX_RETRIES + 1):
+        _throttle()
+        # Rebuild each attempt so a 429 rotates to the next key added in the UI.
+        req = urllib.request.Request(
+            f"{base}/chat/completions", data=data,
+            headers={
+                "Authorization": f"Bearer {_api_key(key_name)}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                # Groq's edge blocks urllib's default Python-urllib User-Agent (403 / 1010).
+                "User-Agent": "openai-python/1.0",
+            },
+            method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                body = json.loads(resp.read().decode("utf-8", "replace"))
+            break
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", "replace")
+            detail = raw[:400]
+            if exc.code in {429, 500, 502, 503, 504} and attempt < _MAX_RETRIES:
+                delay = _retry_delay(exc, raw)
+                print(f"{brain} API {exc.code}; retrying in {delay:.1f}s "
+                      f"({attempt + 1}/{_MAX_RETRIES})", file=sys.stderr)
+                time.sleep(delay)
+                continue
+            raise Problem(f"{brain} API failed ({exc.code}): {detail}") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise Problem(f"{brain} API request failed: {exc}") from exc
     try:
         return body["choices"][0]["message"]["content"] or ""
     except Exception as exc:  # noqa: BLE001
