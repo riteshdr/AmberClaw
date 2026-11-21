@@ -22,6 +22,7 @@ AmberClaw is a small web app/project wrapper around the [`stream-clips`](vendor/
 - `scripts/youtube_auth.py` - helper to generate YouTube OAuth token
 - `data/` - runtime data/jobs and (by default) `StreamClips` outputs (`AMBERCLAW_DATA_DIR`)
 - `Dockerfile`, `docker-entrypoint.sh`, `.dockerignore` - container build/runtime
+- `deploy/aws/` - AWS EC2 deployment (compose, setup script, runbook) — **recommended**
 - `deploy/oracle/` - Oracle Cloud Always Free VM deployment (compose, setup, keepalive, guide)
 - `render.yaml` - Render deployment helper (paid plan only)
 
@@ -138,7 +139,29 @@ Output is always **1080x1920 at up to 60 fps**. The source is downloaded at up t
 - Default privacy is `private` (`YOUTUBE_PRIVACY`). Change to `unlisted`/`public` only when ready.
 - **Credit and permission:** the generated metadata credits the original creator, but you must still have permission/right to clip and upload the content and comply with YouTube/community/copyright rules.
 
-## Deploy on Oracle Cloud Always Free (recommended, free forever)
+## Deploy on AWS EC2 (recommended)
+
+Full console steps, copy-paste commands and cost notes: [`deploy/aws/README.md`](deploy/aws/README.md).
+Recommended setup: **ap-south-1 (Mumbai), Ubuntu 24.04, m6i.large (2 vCPU / 8 GB), 100 GB gp3,
+Elastic IP, HTTP with Basic auth** (~USD 78/month). The Docker image and all code come from GitHub;
+secrets (`.env`, `client_secrets.json`, `token.json`) are copied separately via `scp` and are never
+committed. Short version:
+
+```bash
+# AWS console: launch the instance, open TCP 22 + 10000, allocate an Elastic IP.
+# Local machine: scp -i key.pem .env client_secrets.json token.json ubuntu@<ip>:/tmp/
+ssh -i key.pem ubuntu@<ip>
+sudo apt-get update && sudo apt-get install -y git
+sudo git clone https://github.com/riteshdr/AmberClaw.git /opt/amberclaw
+sudo install -m 600 /tmp/.env /opt/amberclaw/.env
+sudo install -m 600 /tmp/client_secrets.json /tmp/token.json /opt/amberclaw/
+sudo bash /opt/amberclaw/deploy/aws/setup.sh
+```
+
+Open `http://<elastic-ip>:10000`, log in, and use the **GTA 5 — 100 viral shorts** preset.
+The queue uploads 6 clips/day on YouTube's free quota.
+
+## Deploy on Oracle Cloud Always Free (alternative, free forever)
 
 A real always-on VM that fits the whole pipeline: **2 OCPU / 12 GB RAM, 200 GB storage,
 10 TB/month egress**, free for the life of the account. Free PaaS tiers (512 MB, no disk,

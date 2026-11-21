@@ -1,0 +1,61 @@
+# AmberClaw on AWS EC2 (Ubuntu 24.04, ap-south-1).
+# Usage: docker compose -f deploy/aws/docker-compose.yml up -d --build
+services:
+  amberclaw:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: amberclaw:local
+    container_name: amberclaw
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      PORT: "10000"
+      AMBERCLAW_HOST: "0.0.0.0"
+      AMBERCLAW_DATA_DIR: /data
+      STREAMCLIPS_HOME: /data/StreamClips
+      # Secrets added from the dashboard are written here, on the persistent volume.
+      AMBERCLAW_ENV_FILE: /data/.env
+      # Override Windows/local paths from the copied .env. streamclips.py re-execs
+      # itself into the private venv baked into the image, so system Python is enough.
+      STREAMCLIPS_PY: /app/vendor/stream-clips/scripts/streamclips.py
+      STREAMCLIPS_PYTHON: /usr/local/bin/python
+      YOUTUBE_CLIENT_SECRETS: /app/client_secrets.json
+      YOUTUBE_TOKEN_FILE: /app/token.json
+    ports:
+      - "10000:10000"
+    volumes:
+      # Jobs, clips, caches and dashboard-managed .env survive restarts/redeploys.
+      - /var/lib/amberclaw:/data
+      # YouTube OAuth credentials (gitignored; copy them to the repo root first).
+      - ../../client_secrets.json:/app/client_secrets.json:ro
+      - ../../token.json:/app/token.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:10000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # Optional HTTPS (add later): docker compose -f deploy/aws/docker-compose.yml --profile tls up -d
+  # Needs DOMAIN=... in .env, DNS A record pointing at the Elastic IP, and ports 80/443 open.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - amberclaw
+
+volumes:
+  caddy_data:
+  caddy_config:
