@@ -57,9 +57,17 @@ fi
 if ! docker buildx version >/dev/null 2>&1; then
   echo "==> Installing Docker Buildx plugin (standalone binary)"
   arch="$(dpkg --print-architecture)"
-  curl -fsSL "https://github.com/docker/buildx/releases/latest/download/buildx-linux-${arch}" \
-    -o /usr/local/lib/docker/cli-plugins/docker-buildx
-  chmod 0755 /usr/local/lib/docker/cli-plugins/docker-buildx
+  install -d -m 0755 /usr/local/lib/docker/cli-plugins
+  tag="$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest \
+    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)"
+  if [ -n "$tag" ] && curl -fsSL \
+      "https://github.com/docker/buildx/releases/download/${tag}/buildx-${tag}.linux-${arch}" \
+      -o /usr/local/lib/docker/cli-plugins/docker-buildx; then
+    chmod 0755 /usr/local/lib/docker/cli-plugins/docker-buildx
+  else
+    echo "    [warn] Buildx download failed; continuing with the default builder."
+    rm -f /usr/local/lib/docker/cli-plugins/docker-buildx
+  fi
 fi
 docker compose version
 
