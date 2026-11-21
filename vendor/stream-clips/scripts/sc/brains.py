@@ -144,7 +144,7 @@ def _call(cmd, stdin_text=None, cwd=None):
 _API_LOCK = threading.Lock()
 _LAST_CALL = {"t": 0.0}
 _API_KEY_INDEX = 0
-_MIN_INTERVAL = 2.5  # seconds between API calls; avoids free-tier RPM/TPM bursts
+_MIN_INTERVAL = 6.0  # seconds between API calls; avoids free-tier RPM/TPM bursts
 _MAX_RETRIES = 10
 
 
@@ -203,7 +203,7 @@ def _ask_api(brain, key_name, base_name, default_base, model_name, default_model
         "temperature": 0.2,
         # gpt-oss is a reasoning model: it spends tokens on hidden reasoning before
         # emitting the JSON array. A small budget leaves the content empty.
-        "max_tokens": 2500,
+        "max_tokens": 1800,
     }
     data = json.dumps(payload).encode("utf-8")
     for attempt in range(_MAX_RETRIES + 1):

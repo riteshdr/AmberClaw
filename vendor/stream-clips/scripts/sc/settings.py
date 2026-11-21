@@ -30,7 +30,7 @@ DEFAULTS = {
     "part_minutes": 10,              # transcript window sent to the AI per call
     "part_overlap": 20,              # seconds shared by neighbouring windows
     "picks_per_part": 3,
-    "brain_parallel": 3,             # AI calls at the same time
+    "brain_parallel": 1,             # AI calls at the same time (gentle on free-tier limits)
     "min_score": 40,                 # picks below this score are dropped
 
     # framing

@@ -21,7 +21,7 @@ def _record(provider, **kwargs):
         pass
 
 _SYSTEM = (
-    "You write viral YouTube Shorts titles and descriptions for GTA 6 / GTA 5 gaming clips. "
+    "You write viral YouTube Shorts titles and descriptions for GTA 6 gaming clips. "
     "Always write in natural Roman Hinglish (Hindi written in Latin script), high energy and desi. "
     "Use full Hinglish sentences - do not write English sentences. Common gaming words like "
     "gameplay, shorts, boss, crash are fine. Never use Devanagari script. "
@@ -65,7 +65,7 @@ def _fallback(caption, source_title, creator, topic):
     title = _clean(f"{hook} | {text}", 85)
     desc = (
         f"{text}\n\n"
-        "GTA 6 aur GTA 5 ke aur dhamakedaar shorts ke liye channel ko follow karo! 🎮🔥\n"
+        "GTA 6 ke aur dhamakedaar shorts ke liye channel ko follow karo! 🎮🔥\n"
         "Pura moment aur credit neeche likha hai."
     )[:350]
     return title, desc
@@ -94,7 +94,7 @@ def generate(*, caption, source_title="", creator="", topic=""):
         f"Topic: {_clean(topic, 80)}\n\n"
         "Write a punchy 55-85 character Roman Hinglish title and a 2-3 line Roman Hinglish "
         "description (max 300 chars) for this YouTube Short. The title should naturally mention "
-        "GTA 5 or GTA 6 and include one emoji. The description should hype the moment and ask "
+        "GTA 6 and include one emoji. The description should hype the moment and ask "
         "viewers to follow for more GTA shorts. Do NOT include URLs, credit lines or hashtags. "
         "Return JSON only."
     )
@@ -109,7 +109,7 @@ def generate(*, caption, source_title="", creator="", topic=""):
         "temperature": 0.9,
         # gpt-oss spends ~800 tokens on hidden reasoning before emitting the
         # JSON; a small budget leaves content empty (finish_reason=length).
-        "max_tokens": 2500,
+        "max_tokens": 1800,
     }
     req = urllib.request.Request(
         base + "/chat/completions",
