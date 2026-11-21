@@ -22,7 +22,8 @@ services:
       STREAMCLIPS_PY: /app/vendor/stream-clips/scripts/streamclips.py
       STREAMCLIPS_PYTHON: /usr/local/bin/python
       YOUTUBE_CLIENT_SECRETS: /app/client_secrets.json
-      YOUTUBE_TOKEN_FILE: /app/token.json
+      YOUTUBE_TOKEN_SOURCE: /app/token.json
+      YOUTUBE_TOKEN_FILE: /data/token.json
       # Netscape cookie file exported from a signed-in browser; YouTube bot-checks
       # datacenter IPs. Stored root-only on the persistent volume at
       # /var/lib/amberclaw/youtube_cookies.txt (never in git).
