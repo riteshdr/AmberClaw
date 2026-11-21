@@ -262,9 +262,13 @@ class UploadScheduler:
                     line = f"[scheduler] upload failed for {it.get('file')}: {e}"
                     self._log(line)
                     if "uploadLimitExceeded" in str(e):
-                        self.queue.set_upload_cooldown(24)
-                        self._log("[scheduler] YouTube account upload limit hit; backing off for 24h. "
-                                  "Verify the channel's phone number or wait for the rolling window to clear.")
+                        try:
+                            cooldown_h = max(1, int(os.environ.get("YOUTUBE_LIMIT_COOLDOWN_HOURS", "6")))
+                        except (TypeError, ValueError):
+                            cooldown_h = 6
+                        self.queue.set_upload_cooldown(cooldown_h)
+                        self._log(f"[scheduler] YouTube account upload limit hit; backing off for {cooldown_h}h. "
+                                  "Verify the channel's phone number to raise the real limit.")
                     if self.store and it.get("job_id"):
                         self.store.append_log(it["job_id"], line)
 
