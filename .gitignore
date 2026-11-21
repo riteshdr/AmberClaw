@@ -9,6 +9,8 @@ venv/
 data/
 client_secrets.json
 token.json
+youtube_cookies.txt
+*_cookies.txt
 *.log
 .DS_Store
 Thumbs.db

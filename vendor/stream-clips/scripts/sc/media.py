@@ -1,6 +1,7 @@
 """yt-dlp wrappers. A stream is fetched as audio first; video only for the seconds that
 become clips, so a 6-hour stream costs a few hundred MB instead of many GB."""
 
+import os
 import shutil
 import time
 from pathlib import Path
@@ -23,7 +24,13 @@ def ytdlp_args(url, cookies=None):
             if path:
                 args += ["--js-runtimes", f"{runtime}:{path}"]
                 break
-    if cookies:
+    # A headless server has no browser to read cookies from. YOUTUBE_COOKIES_FILE
+    # points at a Netscape-format cookie file exported from a signed-in browser;
+    # it is required on datacenter IPs, which YouTube flags as bots.
+    cookie_file = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
+    if cookie_file and Path(cookie_file).is_file():
+        args += ["--cookies", cookie_file]
+    elif cookies:
         args += ["--cookies-from-browser", cookies]
     return args
 
