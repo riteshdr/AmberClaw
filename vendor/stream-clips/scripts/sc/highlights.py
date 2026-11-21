@@ -37,13 +37,14 @@ Moment types that do well for <<TOPIC>>:
   tip       a specific, useful tip or insight a viewer can use right away
   story     a short story with a clear punchline
 
-Pick at most <<K>> moments from this part. Each moment must:
+Pick <<K>> moments from this part. Always return at least one moment: choose the \
+strongest available even if they are only moderately exciting. Do not answer [] unless \
+this part has literally no spoken words. Each moment must:
   - start just before its hook, never on filler ("uh", "anyway", "so yeah", "okay so")
   - make sense with zero context and pay off before it ends
   - be <<MIN>>-<<MAX>> seconds long, lie inside <<LO>>-<<HI>>, and not overlap another pick
 Skip sponsor reads, reading donations or subs, menus, loading screens, silence, and \
-anything whose payoff falls outside this part. An empty list [] is a fine answer when \
-nothing is strong.
+anything whose payoff falls outside this part.
 
 Reply with a JSON array and nothing else (no prose, no markdown fence). Example shape:
 [{"start": 1204.0, "end": 1239.5, "type": "reaction", "title": "...", "caption": "...", \
