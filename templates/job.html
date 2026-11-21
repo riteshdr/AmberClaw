@@ -93,8 +93,9 @@
         <ul>
         {% for u in job.uploads %}
           <li><code>{{ u.outdir }}</code> — <b>{{ u.status }}</b>
-            {% if u['items'] is defined and u['items'] %}
-              <ul>{% for it in u['items'] %}<li>{{ it.file }} → {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.url }}</a>{% else %}{{ it.video_id or 'no id' }}{% endif %}</li>{% endfor %}</ul>
+            {% set uitems = u.get('items') %}
+            {% if uitems %}
+              <ul>{% for it in uitems %}<li>{{ it.file }} → {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.url }}</a>{% else %}{{ it.video_id or 'no id' }}{% endif %}</li>{% endfor %}</ul>
             {% endif %}
             {% if u.error %}<div style="color:#fca5a5">{{ u.error }}</div>{% endif %}
           </li>
