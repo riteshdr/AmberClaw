@@ -206,6 +206,49 @@ def tidy(pick, words, cfg):
     return out
 
 
+def _fallback_candidates(parts, words, cfg, video, needed):
+    """Signal-based picks when the AI brain returns too few usable moments."""
+    creator = str(video.get("name") or "Gamer").split()[0]
+    topic = str(video.get("topic") or "Gaming").replace(" ", "")
+    out = []
+    for a, b, body in parts:
+        lines = []
+        for raw in body.splitlines():
+            m = re.match(r"^\[([\d.]+)\]\s*(.*)$", raw)
+            if not m:
+                continue
+            t = float(m.group(1))
+            text = m.group(2)
+            signal = bool(re.search(r"<<(?:VOLUME|CHAT)", text))
+            lines.append((t, text, signal))
+        if not lines:
+            continue
+        ranked = [ln for ln in lines if ln[2]] or lines[::max(1, len(lines) // 3)]
+        for t, text, _ in ranked[:3]:
+            if len(out) >= needed:
+                break
+            start = max(a, t - 0.5)
+            end = min(b, start + cfg["max_len"])
+            if end - start < cfg["min_len"]:
+                continue
+            clean = re.sub(r"<<[^>]+>>", "", text).strip()
+            phrase = " ".join(clean.split()[:6]) or f"{topic} moment"
+            raw = {
+                "start": start,
+                "end": end,
+                "type": "reaction",
+                "title": f"{creator.upper()}: {phrase.upper()}",
+                "caption": f"{creator} ka {topic} moment — kya aap bhi shocked ho?",
+                "hashtags": [f"#{topic}", f"#{creator.replace(' ', '')}", "#Shorts"],
+                "score": 48,
+                "why": "High-energy gaming moment with clean Roman Hinglish caption.",
+            }
+            tidy_pick = tidy(raw, words, cfg)
+            if tidy_pick and a - 5 <= tidy_pick["start"] < b + 5:
+                out.append(tidy_pick)
+    return out
+
+
 def best(cands, n, min_score):
     """Highest scores first; no two picks share more than a sliver of time."""
     chosen = []
@@ -294,6 +337,12 @@ def pick(heard, spike_db, chat, lo, hi, work, cfg, video, brain, model=None, red
     with ThreadPoolExecutor(max_workers=max(1, int(cfg["brain_parallel"]))) as pool:
         for got in pool.map(work_on, parts):
             cands += got
+    needed = max(0, int(cfg["clips"]) - len(cands))
+    if needed:
+        extra = _fallback_candidates(parts, words, cfg, video, needed)
+        if extra:
+            say(f"added {len(extra)} signal-based fallback moment(s)", "warn")
+            cands += extra
     chosen = best(cands, cfg["clips"], cfg["min_score"])
     write_json(folder / f"candidates_{int(lo)}_{int(hi)}.json", cands)
     if not chosen:
