@@ -241,10 +241,16 @@ def _fallback_candidates(parts, words, cfg, video, needed):
             part_lines.append((a, b, lines))
 
     out = []
-    # Round-robin by rank: strongest moment of every part first, then 2nd best,
-    # etc. Parts cover the whole stream, so this guarantees spread.
+    # Sample parts evenly across the WHOLE stream (first to last), then take
+    # the strongest moment from each. Taking parts in order would cluster all
+    # picks in the opening minutes; even spacing spreads them over the stream.
+    if len(part_lines) > needed:
+        idxs = [round(i * (len(part_lines) - 1) / max(1, needed - 1)) for i in range(needed)]
+        chosen_parts = [part_lines[i] for i in dict.fromkeys(idxs)]
+    else:
+        chosen_parts = part_lines
     for rank in range(3):
-        for a, b, lines in part_lines:
+        for a, b, lines in chosen_parts:
             if len(out) >= needed:
                 return out
             if rank >= len(lines):
