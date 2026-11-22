@@ -222,7 +222,7 @@ class UploadQueue:
         return self._mutate(fn)
 
     def finish(self, item_id, *, video_id=None, error=None):
-        status = "uploaded" if video_id and not error else "failed"
+        final_status = "uploaded" if video_id and not error else "failed"
         def fn(d):
             for it in d.get("items", []):
                 if it.get("id") != item_id:
@@ -230,6 +230,9 @@ class UploadQueue:
                 previous = it.get("status")
                 # A removal requested mid-upload wins for visibility, but a
                 # video that really went live must still consume quota.
+                # Use a distinct local name: assigning `status` here would make
+                # Python treat it as local to fn() and break the normal path.
+                status = final_status
                 if it.get("cancel_requested"):
                     status = "removed"
                 it["status"] = status

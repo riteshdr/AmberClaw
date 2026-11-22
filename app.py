@@ -54,6 +54,22 @@ def _reconcile_on_startup():
         store.reconcile_interrupted()
     except Exception as e:  # noqa: BLE001
         scheduler._log(f"[startup] reconcile failed: {e}")
+    # A container restart kills every in-flight upload. Any item still marked
+    # 'uploading' was claimed by a process that no longer exists, so return it
+    # to pending immediately instead of waiting for the 1h stale timeout.
+    try:
+        recovered = upload_queue.reset_stale(max_age_seconds=0)
+        if recovered:
+            scheduler._log(f"[startup] recovered {recovered} interrupted upload claim(s)")
+    except Exception as e:  # noqa: BLE001
+        scheduler._log(f"[startup] queue recovery failed: {e}")
+    # A killed worker also leaves its cross-process lock file behind; the
+    # scheduler treats it as valid for 24h, which would block all uploads.
+    try:
+        if scheduler.lock_path.exists():
+            scheduler.lock_path.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
     if os.environ.get("UPLOAD_SCHEDULER_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
         try:
             scheduler.start()

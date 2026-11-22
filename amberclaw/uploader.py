@@ -49,7 +49,20 @@ def _build_service(client_secrets: str, token_file: str):
             creds = flow.run_local_server(port=0)
         token_path.parent.mkdir(parents=True, exist_ok=True)
         token_path.write_text(creds.to_json(), encoding="utf-8")
-    return build("youtube", "v3", credentials=creds)
+    # Use an explicit per-request socket timeout. The deadline in upload_video()
+    # is only checked between chunks, so a single hung HTTP request (e.g. a
+    # dropped proxy connection) could otherwise block the scheduler forever.
+    try:
+        import httplib2
+        from google_auth_httplib2 import AuthorizedHttp
+        try:
+            http_timeout = max(60, int(os.environ.get("YOUTUBE_HTTP_TIMEOUT_SECONDS", "600")))
+        except (TypeError, ValueError):
+            http_timeout = 600
+        http = AuthorizedHttp(creds, http=httplib2.Http(timeout=http_timeout))
+        return build("youtube", "v3", http=http)
+    except Exception:  # noqa: BLE001 - fall back to the default transport
+        return build("youtube", "v3", credentials=creds)
 
 
 def render_description(template: str, *, creator: str, title: str, url: str, caption: str, hashtags: str):
