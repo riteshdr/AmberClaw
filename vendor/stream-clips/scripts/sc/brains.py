@@ -145,7 +145,7 @@ _API_LOCK = threading.Lock()
 _LAST_CALL = {"t": 0.0}
 _API_KEY_INDEX = 0
 _MIN_INTERVAL = 6.0  # seconds between API calls; avoids free-tier RPM/TPM bursts
-_MAX_RETRIES = 10
+_MAX_RETRIES = 3
 
 
 def _api_key(key_name):
@@ -175,7 +175,7 @@ def _retry_delay(exc, raw):
     header = headers.get("Retry-After") if headers else None
     if header:
         try:
-            return min(90.0, float(header))
+            return min(20.0, float(header))
         except (TypeError, ValueError):
             pass
     try:
@@ -183,7 +183,7 @@ def _retry_delay(exc, raw):
         err = obj.get("error", {}) if isinstance(obj, dict) else {}
         value = err.get("retry_after") or obj.get("retry_after")
         if value:
-            return min(90.0, float(value))
+            return min(20.0, float(value))
     except (TypeError, ValueError, AttributeError):
         pass
     return 2.0 + random.random() * 2.0
