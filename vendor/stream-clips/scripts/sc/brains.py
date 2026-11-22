@@ -145,7 +145,7 @@ _API_LOCK = threading.Lock()
 _LAST_CALL = {"t": 0.0}
 _API_KEY_INDEX = 0
 _MIN_INTERVAL = 6.0  # seconds between API calls; avoids free-tier RPM/TPM bursts
-_MAX_RETRIES = 3
+_MAX_RETRIES = 1
 
 
 def _api_key(key_name):

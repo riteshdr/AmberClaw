@@ -207,10 +207,16 @@ def tidy(pick, words, cfg):
 
 
 def _fallback_candidates(parts, words, cfg, video, needed):
-    """Signal-based picks when the AI brain returns too few usable moments."""
+    """Signal-based picks when the AI brain returns too few usable moments.
+
+    Rank lines by the strength of their volume/chat spikes, then pick the best
+    moment from *each* transcript part before taking a second from any part.
+    That spreads picks across the whole stream instead of clustering them in
+    the opening minutes (which made boring intro clips).
+    """
     creator = str(video.get("name") or "Gamer").split()[0]
     topic = str(video.get("topic") or "Gaming").replace(" ", "")
-    out = []
+    part_lines = []
     for a, b, body in parts:
         lines = []
         for raw in body.splitlines():
@@ -219,29 +225,45 @@ def _fallback_candidates(parts, words, cfg, video, needed):
                 continue
             t = float(m.group(1))
             text = m.group(2)
-            signal = bool(re.search(r"<<(?:VOLUME|CHAT)", text))
-            lines.append((t, text, signal))
-        if not lines:
-            continue
-        ranked = [ln for ln in lines if ln[2]] or lines[::max(1, len(lines) // 3)]
-        for t, text, _ in ranked[:3]:
+            strength = 0.0
+            vol = re.search(r"<<VOLUME\s+([\d.]+)\s*dB>>", text)
+            chat = re.search(r"<<CHAT\s+([\d.]+)x>>", text)
+            if vol:
+                strength += min(40.0, float(vol.group(1))) * 2.0
+            if chat:
+                strength += min(60.0, float(chat.group(1))) * 1.5
+            clean = re.sub(r"<<[^>]+>>", "", text).strip()
+            if len(clean.split()) < 3:
+                continue
+            lines.append((strength, t, clean))
+        if lines:
+            lines.sort(key=lambda ln: -ln[0])
+            part_lines.append((a, b, lines))
+
+    out = []
+    # Round-robin by rank: strongest moment of every part first, then 2nd best,
+    # etc. Parts cover the whole stream, so this guarantees spread.
+    for rank in range(3):
+        for a, b, lines in part_lines:
             if len(out) >= needed:
-                break
+                return out
+            if rank >= len(lines):
+                continue
+            strength, t, clean = lines[rank]
             start = max(a, t - 0.5)
             end = min(b, start + cfg["max_len"])
             if end - start < cfg["min_len"]:
                 continue
-            clean = re.sub(r"<<[^>]+>>", "", text).strip()
             phrase = " ".join(clean.split()[:6]) or f"{topic} moment"
             raw = {
                 "start": start,
                 "end": end,
                 "type": "reaction",
                 "title": f"{creator.upper()}: {phrase.upper()}",
-                "caption": f"{creator} ka {topic} moment — kya aap bhi shocked ho?",
+                "caption": f"{creator} ne {topic} mein yeh kiya — dekho kya hua! Kya aap bhi shocked ho?",
                 "hashtags": [f"#{topic}", f"#{creator.replace(' ', '')}", "#Shorts"],
-                "score": 48,
-                "why": "High-energy gaming moment with clean Roman Hinglish caption.",
+                "score": 48 + min(10, int(strength // 20)),
+                "why": f"High-energy moment (volume/chat spike {strength:.0f}) with clean Roman Hinglish caption.",
             }
             tidy_pick = tidy(raw, words, cfg)
             if tidy_pick and a - 5 <= tidy_pick["start"] < b + 5:
